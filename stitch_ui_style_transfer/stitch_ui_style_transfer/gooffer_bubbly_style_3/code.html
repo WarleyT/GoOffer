@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>GoOffer Dashboard</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #fbf9f5;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bubbly-card {
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .bubbly-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.06);
+        }
+        .glass-blur {
+            backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.7);
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #e4e2de;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "inverse-on-surface": "#f2f0ec",
+                    "on-surface": "#1b1c1a",
+                    "surface-container-highest": "#e4e2de",
+                    "on-tertiary-fixed-variant": "#3d4756",
+                    "secondary": "#a83639",
+                    "surface-dim": "#dbdad6",
+                    "outline": "#7f7660",
+                    "surface-container-low": "#f5f3ef",
+                    "background": "#fbf9f5",
+                    "secondary-fixed": "#ffdad8",
+                    "on-error": "#ffffff",
+                    "tertiary-container": "#c7d1e4",
+                    "on-secondary-fixed-variant": "#881d24",
+                    "inverse-surface": "#30312e",
+                    "surface-container-lowest": "#ffffff",
+                    "on-primary": "#ffffff",
+                    "surface-variant": "#e4e2de",
+                    "on-primary-fixed-variant": "#574500",
+                    "primary-fixed": "#ffe083",
+                    "primary": "#735c00",
+                    "surface-tint": "#735c00",
+                    "on-secondary-container": "#720b17",
+                    "surface-container": "#f0eeea",
+                    "on-primary-container": "#6c5700",
+                    "on-secondary-fixed": "#410006",
+                    "tertiary-fixed": "#d9e3f6",
+                    "on-primary-fixed": "#231b00",
+                    "primary-container": "#facc15",
+                    "on-tertiary-container": "#505a69",
+                    "primary-fixed-dim": "#eec200",
+                    "on-surface-variant": "#4d4632",
+                    "surface": "#fbf9f5",
+                    "on-error-container": "#93000a",
+                    "secondary-container": "#fe7676",
+                    "secondary-fixed-dim": "#ffb3b0",
+                    "inverse-primary": "#eec200",
+                    "surface-bright": "#fbf9f5",
+                    "error-container": "#ffdad6",
+                    "on-tertiary": "#ffffff",
+                    "on-background": "#1b1c1a",
+                    "tertiary-fixed-dim": "#bdc7d9",
+                    "on-tertiary-fixed": "#121c2a",
+                    "outline-variant": "#d1c6ab",
+                    "error": "#ba1a1a",
+                    "tertiary": "#555f6f",
+                    "on-secondary": "#ffffff",
+                    "surface-container-high": "#eae8e4"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-page": "40px",
+                    "stack-md": "16px",
+                    "gutter": "24px",
+                    "stack-lg": "32px",
+                    "stack-sm": "8px",
+                    "card-padding": "32px"
+            },
+            "fontFamily": {
+                    "label-md": ["Plus Jakarta Sans"],
+                    "label-sm": ["Plus Jakarta Sans"],
+                    "display": ["Plus Jakarta Sans"],
+                    "headline-lg": ["Plus Jakarta Sans"],
+                    "headline-md": ["Plus Jakarta Sans"],
+                    "body-lg": ["Plus Jakarta Sans"],
+                    "body-md": ["Plus Jakarta Sans"]
+            }
+          }
+        }
+      }
+    </script>
+</head>
+<body class="bg-background text-on-surface">
+<!-- Sidebar Navigation Drawer -->
+<aside class="fixed left-0 h-full w-72 rounded-r-lg bg-surface-container-lowest dark:bg-inverse-surface shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col h-full py-10 z-50">
+<div class="px-8 mb-12">
+<h1 class="font-display text-display text-primary dark:text-primary-fixed">GoOffer</h1>
+</div>
+<nav class="flex-1">
+<div class="flex items-center gap-4 px-6 py-4 bg-primary-container text-on-primary-container rounded-full mx-4 my-1 active:scale-95 transition-transform hover:scale-[1.02] hover:shadow-md transition-all duration-300 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</div>
+<div class="flex items-center gap-4 px-6 py-4 text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high rounded-full mx-4 my-1 active:scale-95 transition-transform hover:scale-[1.02] transition-all duration-300 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="work">work</span>
+<span class="font-label-md text-label-md">Jobs</span>
+</div>
+<div class="flex items-center gap-4 px-6 py-4 text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high rounded-full mx-4 my-1 active:scale-95 transition-transform hover:scale-[1.02] transition-all duration-300 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-md text-label-md">Job Detail</span>
+</div>
+<div class="flex items-center gap-4 px-6 py-4 text-on-surface-variant dark:text-outline-variant hover:bg-surface-container-high rounded-full mx-4 my-1 active:scale-95 transition-transform hover:scale-[1.02] transition-all duration-300 cursor-pointer">
+<span class="material-symbols-outlined" data-icon="balance">balance</span>
+<span class="font-label-md text-label-md">Offer Comparison</span>
+</div>
+</nav>
+<div class="px-8 mt-auto">
+<div class="p-4 bg-surface-container rounded-lg flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary-fixed-dim flex items-center justify-center text-on-primary-fixed">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface">候选人</p>
+<p class="text-[10px] text-on-surface-variant">普通账户</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="ml-72 min-h-screen">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center px-margin-page py-6 ml-0 bg-transparent">
+<div class="flex items-center gap-4">
+<button class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors active:scale-90">
+<span class="material-symbols-outlined text-on-surface" data-icon="menu">menu</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Dashboard</h2>
+</div>
+<div class="flex items-center gap-6">
+<div class="relative">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:text-primary transition-colors" data-icon="notifications">notifications</span>
+<span class="absolute -top-1 -right-1 w-2 h-2 bg-secondary rounded-full"></span>
+</div>
+<img alt="Avatar" class="w-10 h-10 rounded-full border-2 border-white shadow-sm" data-alt="A professional and friendly male portrait for a user profile avatar. The man has a warm smile and is set against a soft-focus office background with warm, natural lighting. The overall style is clean and high-end, fitting a modern professional application." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCVmdubb96RjY4h4Ci_pWR1pBH6VJtdp7UOFo_Im2Apxr1NPa1liaXOSWmd4xr9THqFwVlOY-bNjgFdScSNs379N6ijmUe3zvHGA-MW984cnDZWCa2dGiDC1jVF49qx1w_5DHGKxx6XqZydbT6PXYqcgWa_ofbdnbRQQo3WPIf5bAckl7YL5d_1M8ocANt1lQ29IZH2QA5wtH8nEqohQN5-r-p5Y6wi6FoTFiEw3lqwsTmjdWADIbMvj9wb2cfrG9J5sn6L1v4ZKzX"/>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="px-margin-page pb-12">
+<!-- Header Section -->
+<div class="mb-stack-lg">
+<h3 class="font-headline-lg text-headline-lg text-on-surface">概览</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">集中查看投递、面试和 Offer 状态</p>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-12 gap-gutter">
+<!-- Metrics Bar -->
+<div class="col-span-12 flex flex-wrap gap-gutter">
+<div class="flex-1 min-w-[200px] p-card-padding bg-surface-container-lowest rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<p class="font-label-md text-label-md text-on-surface-variant mb-2">投递总数</p>
+<div class="flex items-end gap-2">
+<span class="font-display text-[40px] leading-none text-on-surface">28</span>
+<span class="text-primary font-bold text-sm mb-1">活跃中</span>
+</div>
+</div>
+<div class="flex-1 min-w-[200px] p-card-padding bg-surface-container-lowest rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<p class="font-label-md text-label-md text-on-surface-variant mb-2">已申请</p>
+<div class="flex items-end gap-2">
+<span class="font-display text-[40px] leading-none text-on-surface">16</span>
+<span class="text-outline-variant font-bold text-sm mb-1">等待反馈</span>
+</div>
+</div>
+<div class="flex-1 min-w-[200px] p-card-padding bg-primary-container rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<p class="font-label-md text-label-md text-on-primary-container mb-2">正在面试</p>
+<div class="flex items-end gap-2">
+<span class="font-display text-[40px] leading-none text-on-primary-container">7</span>
+<span class="text-on-primary-container opacity-70 font-bold text-sm mb-1">即将开始</span>
+</div>
+</div>
+<div class="flex-1 min-w-[200px] p-card-padding bg-inverse-surface rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<p class="font-label-md text-label-md text-inverse-on-surface opacity-70 mb-2">收获 Offer</p>
+<div class="flex items-end gap-2">
+<span class="font-display text-[40px] leading-none text-primary-fixed">2</span>
+<span class="text-primary-fixed-dim font-bold text-sm mb-1">恭喜！</span>
+</div>
+</div>
+</div>
+<!-- AI Review Card (Hero style) -->
+<div class="col-span-12 lg:col-span-8 p-10 rounded-lg bg-white shadow-[0_20px_40px_rgba(0,0,0,0.04)] relative overflow-hidden bubbly-card flex flex-col justify-center min-h-[320px]">
+<div class="absolute top-0 right-0 w-1/2 h-full opacity-10 pointer-events-none">
+<img alt="AI Visualization" class="w-full h-full object-cover rounded-l-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDiqkwqgXQMA6sRGcvJAL4y2hG4EOWxU8IRoDXMsuSPBTUl17JDrhT6x42O5_Npt8Ml_g24g0rdZebdP6vGlXRDJELXIWi9b7vYFvG41feZUM0-JPqxk8oXlrR4jYCkghBrgd-rlV5mZT0eq4enW0uFsQDbtVLhI8qBxknPgGAewJhoHKSw-4cQvYJV_6dAn5IpaT0uYCxV_qMEIxobmzGnSP2BbVQGmsZTbp942kIONjIP1j6IQK5Xq2GDexYI5G3ehqEUJwcB_a6J"/>
+</div>
+<div class="relative z-10 max-w-lg">
+<div class="inline-flex items-center gap-2 px-4 py-2 bg-primary-fixed text-on-primary-fixed rounded-full mb-6">
+<span class="material-symbols-outlined text-sm" data-icon="auto_awesome">auto_awesome</span>
+<span class="font-label-sm text-label-sm">AI 助攻</span>
+</div>
+<h4 class="font-headline-lg text-headline-lg text-on-surface mb-4">AI 面试复盘报告已生成</h4>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8">基于您昨日与 ByteDance 的模拟面试，AI 识别出 3 个可以优化的技术难点。查看报告以提升下次表现。</p>
+<button class="h-14 px-8 bg-on-surface text-white font-bold rounded-full hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center gap-3">
+                            立即查看报告
+                            <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Recent Interviews -->
+<div class="col-span-12 lg:col-span-4 p-card-padding bg-surface-container-lowest rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<div class="flex justify-between items-center mb-6">
+<h4 class="font-headline-md text-headline-md">近期面试</h4>
+<span class="text-primary font-bold cursor-pointer hover:underline">查看全部</span>
+</div>
+<div class="space-y-4">
+<!-- Interview Item -->
+<div class="flex items-center gap-4 p-4 rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<div class="w-12 h-12 rounded-lg bg-white shadow-sm flex items-center justify-center p-2 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl" data-icon="flutter_dash">flutter_dash</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md text-on-surface">ByteDance</p>
+<p class="text-xs text-on-surface-variant">前端开发工程师 · 三面</p>
+</div>
+<div class="text-right">
+<p class="font-label-sm text-label-sm text-on-surface">14:00</p>
+<p class="text-[10px] text-on-surface-variant">今天</p>
+</div>
+</div>
+<!-- Interview Item -->
+<div class="flex items-center gap-4 p-4 rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<div class="w-12 h-12 rounded-lg bg-white shadow-sm flex items-center justify-center p-2 group-hover:scale-110 transition-transform text-blue-600">
+<span class="material-symbols-outlined text-3xl" data-icon="vaping_rooms">vaping_rooms</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md text-on-surface">Tencent</p>
+<p class="text-xs text-on-surface-variant">产品经理 · 初面</p>
+</div>
+<div class="text-right">
+<p class="font-label-sm text-label-sm text-on-surface">10:30</p>
+<p class="text-[10px] text-on-surface-variant">明天</p>
+</div>
+</div>
+<!-- Interview Item -->
+<div class="flex items-center gap-4 p-4 rounded-lg bg-surface-container-low hover:bg-surface-container-high transition-colors cursor-pointer group">
+<div class="w-12 h-12 rounded-lg bg-white shadow-sm flex items-center justify-center p-2 group-hover:scale-110 transition-transform text-green-600">
+<span class="material-symbols-outlined text-3xl" data-icon="shopping_bag">shopping_bag</span>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-label-md text-on-surface">Shopify</p>
+<p class="text-xs text-on-surface-variant">后端专家 · 二面</p>
+</div>
+<div class="text-right">
+<p class="font-label-sm text-label-sm text-on-surface">09:00</p>
+<p class="text-[10px] text-on-surface-variant">周五</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Follow-up Needed -->
+<div class="col-span-12 p-card-padding bg-white rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] bubbly-card">
+<div class="flex justify-between items-center mb-8">
+<div>
+<h4 class="font-headline-md text-headline-md">待跟进</h4>
+<p class="font-body-md text-body-md text-on-surface-variant">需要您处理的任务或状态更新</p>
+</div>
+<div class="flex gap-2">
+<button class="p-3 bg-surface-container rounded-full hover:bg-surface-container-high"><span class="material-symbols-outlined" data-icon="filter_list">filter_list</span></button>
+<button class="p-3 bg-primary-container text-on-primary-container rounded-full hover:shadow-md"><span class="material-symbols-outlined" data-icon="add">add</span></button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<!-- Task Card 1 -->
+<div class="p-6 rounded-lg bg-surface-container-low border border-transparent hover:border-primary-fixed transition-all">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center">
+<span class="material-symbols-outlined text-red-500" data-icon="camera">camera</span>
+</div>
+<span class="px-3 py-1 bg-error-container text-on-error-container rounded-full text-[10px] font-bold">加急</span>
+</div>
+<h5 class="font-label-md text-label-md text-on-surface mb-1">Xiaohongshu 小红书</h5>
+<p class="text-xs text-on-surface-variant mb-6">需提交补充作品集</p>
+<div class="flex items-center justify-between mt-auto">
+<span class="text-[10px] text-on-surface-variant">截止：24小时内</span>
+<button class="text-primary font-bold text-xs flex items-center gap-1">去处理 <span class="material-symbols-outlined text-xs" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+<!-- Task Card 2 -->
+<div class="p-6 rounded-lg bg-surface-container-low border border-transparent hover:border-primary-fixed transition-all">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+<span class="material-symbols-outlined text-blue-500" data-icon="window">window</span>
+</div>
+<span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container rounded-full text-[10px] font-bold">进行中</span>
+</div>
+<h5 class="font-label-md text-label-md text-on-surface mb-1">Microsoft 微软</h5>
+<p class="text-xs text-on-surface-variant mb-6">确认下周二面试安排</p>
+<div class="flex items-center justify-between mt-auto">
+<span class="text-[10px] text-on-surface-variant">等待回复中</span>
+<button class="text-primary font-bold text-xs flex items-center gap-1">回复 <span class="material-symbols-outlined text-xs" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+<!-- Task Card 3 -->
+<div class="p-6 rounded-lg bg-surface-container-low border border-transparent hover:border-primary-fixed transition-all">
+<div class="flex items-center justify-between mb-4">
+<div class="w-10 h-10 rounded-lg bg-yellow-50 flex items-center justify-center">
+<span class="material-symbols-outlined text-yellow-600" data-icon="restaurant">restaurant</span>
+</div>
+<span class="px-3 py-1 bg-primary-fixed text-on-primary-fixed rounded-full text-[10px] font-bold">待办</span>
+</div>
+<h5 class="font-label-md text-label-md text-on-surface mb-1">Meituan 美团</h5>
+<p class="text-xs text-on-surface-variant mb-6">填写背景调查表单</p>
+<div class="flex items-center justify-between mt-auto">
+<span class="text-[10px] text-on-surface-variant">截止：周五</span>
+<button class="text-primary font-bold text-xs flex items-center gap-1">填写 <span class="material-symbols-outlined text-xs" data-icon="chevron_right">chevron_right</span></button>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-10 right-10 w-16 h-16 bg-primary-container text-on-primary-container rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50">
+<span class="material-symbols-outlined text-3xl" data-icon="add">add</span>
+</button>
+<script>
+        // Micro-interaction for cards
+        document.querySelectorAll('.bubbly-card').forEach(card => {
+            card.addEventListener('mousedown', () => {
+                card.style.transform = 'scale(0.98)';
+            });
+            card.addEventListener('mouseup', () => {
+                card.style.transform = 'translateY(-4px) scale(1.02)';
+            });
+        });
+    </script>
+</body></html>

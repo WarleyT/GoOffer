@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #fbf9f5;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bubbly-card {
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .bubbly-card:hover {
+            transform: translateY(-4px) scale(1.01);
+        }
+        .glass-nav {
+            backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.8);
+        }
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d1c6ab;
+            border-radius: 10px;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "inverse-on-surface": "#f2f0ec",
+                      "on-surface": "#1b1c1a",
+                      "surface-container-highest": "#e4e2de",
+                      "on-tertiary-fixed-variant": "#3d4756",
+                      "secondary": "#a83639",
+                      "surface-dim": "#dbdad6",
+                      "outline": "#7f7660",
+                      "surface-container-low": "#f5f3ef",
+                      "background": "#fbf9f5",
+                      "secondary-fixed": "#ffdad8",
+                      "on-error": "#ffffff",
+                      "tertiary-container": "#c7d1e4",
+                      "on-secondary-fixed-variant": "#881d24",
+                      "inverse-surface": "#30312e",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary": "#ffffff",
+                      "surface-variant": "#e4e2de",
+                      "on-primary-fixed-variant": "#574500",
+                      "primary-fixed": "#ffe083",
+                      "primary": "#735c00",
+                      "surface-tint": "#735c00",
+                      "on-secondary-container": "#720b17",
+                      "surface-container": "#f0eeea",
+                      "on-primary-container": "#6c5700",
+                      "on-secondary-fixed": "#410006",
+                      "tertiary-fixed": "#d9e3f6",
+                      "on-primary-fixed": "#231b00",
+                      "primary-container": "#facc15",
+                      "on-tertiary-container": "#505a69",
+                      "primary-fixed-dim": "#eec200",
+                      "on-surface-variant": "#4d4632",
+                      "surface": "#fbf9f5",
+                      "on-error-container": "#93000a",
+                      "secondary-container": "#fe7676",
+                      "secondary-fixed-dim": "#ffb3b0",
+                      "inverse-primary": "#eec200",
+                      "surface-bright": "#fbf9f5",
+                      "error-container": "#ffdad6",
+                      "on-tertiary": "#ffffff",
+                      "on-background": "#1b1c1a",
+                      "tertiary-fixed-dim": "#bdc7d9",
+                      "on-tertiary-fixed": "#121c2a",
+                      "outline-variant": "#d1c6ab",
+                      "error": "#ba1a1a",
+                      "tertiary": "#555f6f",
+                      "on-secondary": "#ffffff",
+                      "surface-container-high": "#eae8e4"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin-page": "40px",
+                      "stack-md": "16px",
+                      "gutter": "24px",
+                      "stack-lg": "32px",
+                      "stack-sm": "8px",
+                      "card-padding": "32px"
+              },
+              "fontFamily": {
+                      "label-md": ["Plus Jakarta Sans"],
+                      "label-sm": ["Plus Jakarta Sans"],
+                      "display": ["Plus Jakarta Sans"],
+                      "headline-lg": ["Plus Jakarta Sans"],
+                      "headline-md": ["Plus Jakarta Sans"],
+                      "body-lg": ["Plus Jakarta Sans"],
+                      "body-md": ["Plus Jakarta Sans"]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface">
+<!-- Navigation Drawer -->
+<aside class="fixed left-0 h-full w-72 rounded-r-lg bg-surface-container-lowest shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col py-10 z-50 hidden md:flex">
+<div class="px-8 mb-12">
+<h1 class="font-display text-display text-primary">GoOffer</h1>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-container-high rounded-full mx-4 my-1 transition-all duration-300 hover:scale-[1.02]" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="font-label-md text-label-md">Dashboard</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-4 bg-primary-container text-on-primary-container rounded-full mx-4 my-1 shadow-md transition-all duration-300 scale-[1.02]" href="#">
+<span class="material-symbols-outlined" data-icon="work" style="font-variation-settings: 'FILL' 1;">work</span>
+<span class="font-label-md text-label-md">Jobs</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-container-high rounded-full mx-4 my-1 transition-all duration-300 hover:scale-[1.02]" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="font-label-md text-label-md">Job Detail</span>
+</a>
+<a class="flex items-center gap-4 px-6 py-4 text-on-surface-variant hover:bg-surface-container-high rounded-full mx-4 my-1 transition-all duration-300 hover:scale-[1.02]" href="#">
+<span class="material-symbols-outlined" data-icon="balance">balance</span>
+<span class="font-label-md text-label-md">Offer Comparison</span>
+</a>
+</nav>
+<div class="px-8 mt-auto">
+<div class="p-4 bg-surface-container rounded-lg flex items-center gap-3">
+<div class="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center overflow-hidden">
+<img alt="User Avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA3FFAZNav-y3ReSPbwnSbzJl465Xe61W1Z7z4LAv_OHDFvcC-2g_NexweuG34-Qsdg_oFa00vGjCTBgC_kh0pIkbqsqwRGs-x3hgGDbuTBmKVcOfC1FS2xWKhhd5v-NuibxTwiafiFd2DSatQYZxStKwV1hTAHsGDMSK-r-Q5QiWJuQSN0clLDq39dCsDWZhciXEVnK0X-QbYdONQS_AD9y1xqdknK8BGL4gES4zQaepfj3WWC56w5mDSOxtBtf5z_hWgeeoGv3xnz"/>
+</div>
+<div>
+<p class="font-label-md text-label-md text-on-surface">Alex Chen</p>
+<p class="text-[10px] text-on-surface-variant">Premium Plan</p>
+</div>
+</div>
+</div>
+</aside>
+<!-- Main Content -->
+<main class="md:ml-72 min-h-screen">
+<!-- Top App Bar -->
+<header class="flex justify-between items-center px-margin-page py-6 bg-transparent">
+<div class="flex items-center gap-4">
+<button class="md:hidden p-2 rounded-full hover:bg-surface-container-high">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h2 class="font-headline-lg text-headline-lg text-on-surface">岗位</h2>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-3 bg-surface-container-lowest rounded-full shadow-sm hover:shadow-md transition-all active:scale-90">
+<span class="material-symbols-outlined text-primary" data-icon="notifications">notifications</span>
+</button>
+<div class="hidden md:block w-12 h-12 rounded-full border-2 border-primary-container p-0.5">
+<img alt="User profile photo" class="rounded-full w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCx6mRA3VBn15GSPEkfOvJSGGf7iwnUNIOqXlO0P607DHG03HmB2tItTZaIXJiE7KPiSdH49Xi5AnucJ4ULEncU-4k8cxyJonUTFN4CFakNmuQunr-aLrYzV7BEE6uLdOn5nZASwS-Gwn00FwhVjxQ62DfkZfGCUIbr88qM2folWvDBUj7IcZs4qoc25lRCY0V9QWg4UTdp8IkC8FrlgnE2taeLs8rM6W6KD8e9H6MTwFLhS94XKTu1f4isMMdiOQlFZEuTylEvgnEj"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="px-margin-page pb-12">
+<!-- Header Description -->
+<div class="mb-stack-lg">
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
+                    筛选、排序并更新每个岗位的投递状态，助您轻松管理求职进度。
+                </p>
+</div>
+<!-- Toolbar -->
+<div class="flex flex-col md:flex-row gap-4 mb-stack-lg items-center">
+<div class="relative flex-1 w-full">
+<span class="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-outline" data-icon="search">search</span>
+<input class="w-full pl-12 pr-4 py-4 bg-surface-container-lowest border-none rounded-full shadow-sm focus:ring-2 focus:ring-primary-container font-body-md text-body-md inner-shadow" placeholder="搜索公司、职位或城市..." type="text"/>
+</div>
+<div class="flex gap-3 w-full md:w-auto">
+<button class="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-4 bg-surface-container-lowest rounded-full shadow-sm hover:shadow-md transition-all font-label-md text-label-md text-on-surface">
+<span class="material-symbols-outlined text-outline" data-icon="filter_list">filter_list</span>
+                        筛选
+                    </button>
+<button class="flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-4 bg-primary-container rounded-full shadow-md hover:shadow-lg transition-all active:scale-95 font-label-md text-label-md text-on-primary-container">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+                        新增岗位
+                    </button>
+</div>
+</div>
+<!-- Dashboard Stats Preview (Small Bento) -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-stack-lg">
+<div class="p-6 bg-surface-container-lowest rounded-lg shadow-sm border-l-4 border-primary">
+<p class="text-label-sm font-label-sm text-outline mb-1">投递总数</p>
+<h3 class="text-headline-md font-headline-md text-on-surface">42</h3>
+</div>
+<div class="p-6 bg-surface-container-lowest rounded-lg shadow-sm border-l-4 border-secondary-container">
+<p class="text-label-sm font-label-sm text-outline mb-1">面试中</p>
+<h3 class="text-headline-md font-headline-md text-on-surface">8</h3>
+</div>
+<div class="p-6 bg-surface-container-lowest rounded-lg shadow-sm border-l-4 border-tertiary-container">
+<p class="text-label-sm font-label-sm text-outline mb-1">已获得 Offer</p>
+<h3 class="text-headline-md font-headline-md text-on-surface">3</h3>
+</div>
+<div class="p-6 bg-surface-container-lowest rounded-lg shadow-sm border-l-4 border-error-container">
+<p class="text-label-sm font-label-sm text-outline mb-1">待跟进</p>
+<h3 class="text-headline-md font-headline-md text-on-surface">12</h3>
+</div>
+</div>
+<!-- Jobs Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-gutter">
+<!-- Job Card 1 -->
+<div class="bubbly-card bg-surface-container-lowest p-card-padding rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="Company Logo" class="w-full h-full object-cover" data-alt="A clean, minimalist logo icon for a technology company named ByteDance. The logo is displayed in a vibrant secondary red color against a soft, cream-colored background, maintaining the high-key, friendly UI aesthetic. The composition is centered within a rounded square container with a soft drop shadow, symbolizing modern corporate identity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwlWREyMYAcofOQARPznx6xlbVhoisEH630StcGlLWducuJ0TJWWi1l0daLiWmp5JwP1F0h6GbNwd9Ylr1rkn_1mZhgZUanyRSGL1eIuifoWOI79pa3_3REM-3Rx2Xq4uHTAlOunYHQa4dyFibPy29pGT3NW10l_Y3Qr1aG0dbIGCIRGXCp1AP8tMaFn1w9YlTZJWk4vtR7p6VAdRxKwoOSfJ8bktCtVh45Fmq8FmLlYdFw433U2t-xCQN5_pRQsjwx2i7UTaYtOYQ"/>
+</div>
+<span class="px-4 py-1.5 bg-secondary-container text-on-secondary-container rounded-full text-label-sm font-label-sm">面试中</span>
+</div>
+<h4 class="text-headline-md font-headline-md text-on-surface mb-2">高级前端开发工程师</h4>
+<div class="flex items-center gap-2 mb-6">
+<span class="text-body-md font-body-md text-on-surface-variant">字节跳动 (ByteDance)</span>
+<span class="text-outline-variant">•</span>
+<span class="text-body-md font-body-md text-on-surface-variant">北京</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-6 border-t border-surface-container-high">
+<div>
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-1">薪资范围</p>
+<p class="text-body-lg font-headline-md text-primary">35k - 50k</p>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="text-label-sm font-label-sm text-on-surface">P1 优先级</span>
+</div>
+</div>
+</div>
+<!-- Job Card 2 -->
+<div class="bubbly-card bg-surface-container-lowest p-card-padding rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="Company Logo" class="w-full h-full object-cover" data-alt="A modern corporate logo for Tencent, featuring a cool blue color palette consistent with the tertiary branding. The logo is set against a pristine, soft-white background with gentle ambient lighting. The design is rounded and friendly, emphasizing professional reliability and technological advancement in a spacious, modern digital layout." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAe7pP0QMSdvtz8Gc5RyIoLeKB2fjOaglQAQo8zDiAKcyXfR_XYEovcwYHe_gvqsC73mcgH16MSsDqdjQUEJz9dvj6hEx-0fBFwo8Hh4UKv4MQOickVl1G6Z7LCJXGfUnkqXcSnSAuzgcGQZyka8CYxY1G7DfsGhqJIJ1ACvifFcrXN-Oz9smfzBfKo-Uppb23Ze6SPpTw2pYCGH59bEfVvfR84jr8RLTwvjGbKjbmlv9ZpcPEbrZ_-7TCAV3XaAvIwOtj7P0WfvwU_"/>
+</div>
+<span class="px-4 py-1.5 bg-primary-container text-on-primary-container rounded-full text-label-sm font-label-sm">已投递</span>
+</div>
+<h4 class="text-headline-md font-headline-md text-on-surface mb-2">资深产品经理</h4>
+<div class="flex items-center gap-2 mb-6">
+<span class="text-body-md font-body-md text-on-surface-variant">腾讯 (Tencent)</span>
+<span class="text-outline-variant">•</span>
+<span class="text-body-md font-body-md text-on-surface-variant">深圳</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-6 border-t border-surface-container-high">
+<div>
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-1">薪资范围</p>
+<p class="text-body-lg font-headline-md text-primary">40k - 65k</p>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="text-label-sm font-label-sm text-on-surface">P1 优先级</span>
+</div>
+</div>
+</div>
+<!-- Job Card 3 -->
+<div class="bubbly-card bg-surface-container-lowest p-card-padding rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="Company Logo" class="w-full h-full object-cover" data-alt="The corporate identity of Alibaba represented by a warm orange and yellow logo. The design is clean and bubbly, matching the playful yet professional design system of the GoOffer app. The logo is housed in a smooth, rounded square with 16px radius, set against a cream-colored canvas with extremely diffused, soft ambient shadows." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDsTCs3n1ZthAU4Dbea4kA-lcgJAyypama42ngR0kE0CtuUZ6a1bhP2q7vgwQU3QB0pbb__pfiWp4Z6EjRNWtj42PMUCJuc7g3p6ZDJivKWfQI3mEAqLd0C7L-p-oyhsJYvAZ1Q0TelVnq0hCfKU_54vTbIZTobYn__yoi8vsEP_L94M_Fpz24Uelv8S-hv5G0BA99hzNM1alOqRrY7vX72ZtEugBdy_elIR_lDKwdB5auh_lbZADotq_uzR63DYMxMRlSmhma5mnOg"/>
+</div>
+<span class="px-4 py-1.5 bg-surface-container-highest text-on-surface-variant rounded-full text-label-sm font-label-sm">流程结束</span>
+</div>
+<h4 class="text-headline-md font-headline-md text-on-surface mb-2">数据分析专家</h4>
+<div class="flex items-center gap-2 mb-6">
+<span class="text-body-md font-body-md text-on-surface-variant">阿里巴巴 (Alibaba)</span>
+<span class="text-outline-variant">•</span>
+<span class="text-body-md font-body-md text-on-surface-variant">杭州</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-6 border-t border-surface-container-high">
+<div>
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-1">薪资范围</p>
+<p class="text-body-lg font-headline-md text-primary">30k - 45k</p>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full">
+<span class="material-symbols-outlined text-outline-variant text-sm" data-icon="star">star</span>
+<span class="text-label-sm font-label-sm text-on-surface">P3 优先级</span>
+</div>
+</div>
+</div>
+<!-- Job Card 4 -->
+<div class="bubbly-card bg-surface-container-lowest p-card-padding rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="Company Logo" class="w-full h-full object-cover" data-alt="A friendly, bright yellow logo for Meituan, sitting in a rounded square with a thick border. The visual style is optimistic and energetic, leveraging the primary yellow color of the brand identity. The background is a soft, warm cream, creating a tactile and professional feel that is accessible to modern job seekers." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCN-U9G6GrDTjhALm86GdmwSnii_G6KtXQMUbPLr_QpDCByjEDJVITWqw07nK0AeYr5recfqcdkMuCV-0i4f-T9-hwLnvSQ6p3i97ZrEIzbTxjl8RFAQYA8_4nE-Xvia0Nu13z6e2d91sn8V0jpmusVUK4XkE7RVBRxddAlkgtaqMTM9FoPCWFGnvkkl3TBbUPCAPVlryDMSd7w82_S9doVghxW8wA0LwajX-vrDAlmAFpDBXZHuEt4VW02HZqobvQSc0QMdtSKtdmB"/>
+</div>
+<span class="px-4 py-1.5 bg-tertiary-container text-on-tertiary-container rounded-full text-label-sm font-label-sm">Offer 获得</span>
+</div>
+<h4 class="text-headline-md font-headline-md text-on-surface mb-2">UI 设计师</h4>
+<div class="flex items-center gap-2 mb-6">
+<span class="text-body-md font-body-md text-on-surface-variant">美团 (Meituan)</span>
+<span class="text-outline-variant">•</span>
+<span class="text-body-md font-body-md text-on-surface-variant">上海</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-6 border-t border-surface-container-high">
+<div>
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-1">薪资范围</p>
+<p class="text-body-lg font-headline-md text-primary">25k - 40k</p>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="text-label-sm font-label-sm text-on-surface">P2 优先级</span>
+</div>
+</div>
+</div>
+<!-- Job Card 5 -->
+<div class="bubbly-card bg-surface-container-lowest p-card-padding rounded-lg shadow-[0_20px_40px_rgba(0,0,0,0.04)] flex flex-col justify-between">
+<div>
+<div class="flex justify-between items-start mb-6">
+<div class="w-16 h-16 bg-surface-container-high rounded-lg flex items-center justify-center overflow-hidden border border-outline-variant">
+<img alt="Company Logo" class="w-full h-full object-cover" data-alt="A sophisticated logo for Baidu, emphasizing clean lines and a friendly aesthetic. The brand color is subtly integrated into a rounded icon format. The surrounding environment is bright and high-key, using soft lighting to create a calm and inviting atmosphere. The overall look is modern and polished, aligning with a premium job search experience." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDgWQ7pu2xEqajIClTbnnrUIFVMbvsoZjCw7npQEoIqkPsXQlpgfS9sD237CjSV1w3aeVyaB0rbEIq3yFP9ryyeQ7sfSc45X1Ttu5Jtnqg_QIWspWDp0S3Rmnj8NaCiTfbep30XH1Nz0lG6X6Rm9cTdJ35sp4KT7aDCrg9Dh3BVP8N-cDUdWsL6MlPb8v1EYO3NZubqvTs3sQvf9qC7_d1LvwItdxKC0xb8hZasgNNveZ4ssVb_0fDcJQD2sN34yBCMih142znawDQr"/>
+</div>
+<span class="px-4 py-1.5 bg-secondary-container text-on-secondary-container rounded-full text-label-sm font-label-sm">二面已过</span>
+</div>
+<h4 class="text-headline-md font-headline-md text-on-surface mb-2">全栈工程师</h4>
+<div class="flex items-center gap-2 mb-6">
+<span class="text-body-md font-body-md text-on-surface-variant">百度 (Baidu)</span>
+<span class="text-outline-variant">•</span>
+<span class="text-body-md font-body-md text-on-surface-variant">北京</span>
+</div>
+</div>
+<div class="flex items-center justify-between mt-4 pt-6 border-t border-surface-container-high">
+<div>
+<p class="text-label-sm font-label-sm text-outline uppercase tracking-wider mb-1">薪资范围</p>
+<p class="text-body-lg font-headline-md text-primary">30k - 55k</p>
+</div>
+<div class="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-full">
+<span class="material-symbols-outlined text-primary-fixed-dim text-sm" data-icon="star" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="text-label-sm font-label-sm text-on-surface">P1 优先级</span>
+</div>
+</div>
+</div>
+<!-- Add New Job Placeholder Card -->
+<div class="bubbly-card bg-transparent border-4 border-dashed border-outline-variant p-card-padding rounded-lg flex flex-col items-center justify-center text-center group cursor-pointer">
+<div class="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-outline text-3xl" data-icon="add">add</span>
+</div>
+<p class="font-headline-md text-headline-md text-outline">添加新岗位</p>
+<p class="text-body-md font-body-md text-outline-variant mt-2">记录你的每一次尝试</p>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Nav for Mobile -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 bg-surface-container-lowest flex justify-around items-center py-4 px-6 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] rounded-t-lg z-50">
+<a class="flex flex-col items-center gap-1 text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-[10px] font-label-sm">首页</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined" data-icon="work" style="font-variation-settings: 'FILL' 1;">work</span>
+<span class="text-[10px] font-label-sm">岗位</span>
+</a>
+<div class="relative -top-8">
+<button class="w-14 h-14 bg-primary-container text-on-primary-container rounded-full shadow-lg flex items-center justify-center active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="add">add</span>
+</button>
+</div>
+<a class="flex flex-col items-center gap-1 text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="description">description</span>
+<span class="text-[10px] font-label-sm">详情</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-on-surface-variant" href="#">
+<span class="material-symbols-outlined" data-icon="balance">balance</span>
+<span class="text-[10px] font-label-sm">对比</span>
+</a>
+</nav>
+<script>
+        // Simple micro-interactions
+        document.querySelectorAll('.bubbly-card').forEach(card => {
+            card.addEventListener('mousedown', () => {
+                card.style.transform = 'scale(0.98)';
+            });
+            card.addEventListener('mouseup', () => {
+                card.style.transform = 'translateY(-4px) scale(1.01)';
+            });
+        });
+
+        // Search bar interaction
+        const searchInput = document.querySelector('input');
+        searchInput.addEventListener('focus', () => {
+            searchInput.parentElement.style.transform = 'scale(1.01)';
+            searchInput.parentElement.style.transition = 'transform 0.3s ease';
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.parentElement.style.transform = 'scale(1)';
+        });
+    </script>
+</body></html>
