@@ -1004,12 +1004,16 @@ function renderShell(content) {
             </div>
           </div>
           <div class="topbar-actions">
+            <button class="icon-button mobile-account-button mobile-only" type="button" data-action="toggle-account" aria-label="${state.auth.session ? "账号设置" : "登录账号"}" aria-haspopup="dialog" aria-expanded="${state.accountOpen}">
+              <span class="material-symbols-outlined" aria-hidden="true">${state.auth.session ? "account_circle" : "login"}</span>
+            </button>
             ${topbarActions[state.screen] || ""}
             <button class="icon-button topbar-notification" type="button" data-action="toast" data-message="提醒中心会在后续版本接入" aria-label="通知">
               <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
             </button>
           </div>
         </header>
+        ${state.accountOpen ? `<div class="mobile-account-popover mobile-only">${renderAccountPopover()}</div>` : ""}
         <section class="content">${content}</section>
       </main>
       <nav class="bottom-nav" aria-label="移动端导航">
@@ -3050,7 +3054,7 @@ document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
   const selectRoot = event.target.closest("[data-custom-select]");
   const dateTimeRoot = event.target.closest("[data-date-time-picker]");
-  const accountRoot = event.target.closest(".sidebar-user, .account-popover");
+  const accountRoot = event.target.closest(".sidebar-user, .mobile-account-button, .account-popover");
   const funnelRoot = event.target.closest(".funnel-controls, .funnel-standalone");
   const actionEl = event.target.closest("[data-action]");
   let closedAccount = false;
