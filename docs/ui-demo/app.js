@@ -342,7 +342,7 @@ function currentUserInitials() {
 async function readJsonResponse(response, fallbackMessage) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload?.error?.message || payload?.msg || fallbackMessage);
+    throw new Error(payload?.error?.message || payload?.message || payload?.msg || fallbackMessage);
   }
   return payload;
 }
@@ -523,13 +523,14 @@ function mapRemoteSummary(row) {
 
 async function loadRemoteWorkspace() {
   if (!isRemoteReady()) return;
-  const [jobRows, interviewRows, questionRows, offerRows, summaryRows] = await Promise.all([
-    supabaseTable("jobs?select=*&order=updated_at.desc", { prefer: "" }),
-    supabaseTable("interviews?select=*&order=created_at.asc", { prefer: "" }),
-    supabaseTable("interview_questions?select=*&order=created_at.asc", { prefer: "" }),
-    supabaseTable("offers?select=*", { prefer: "" }),
-    supabaseTable("ai_summaries?select=*&order=created_at.desc", { prefer: "" })
-  ]);
+  const payload = await fetch("/api/jobs", {
+    headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
+  }).then((response) => readJsonResponse(response, "读取岗位失败。"));
+  const jobRows = payload.jobs || [];
+  const interviewRows = payload.interviews || [];
+  const questionRows = payload.questions || [];
+  const offerRows = payload.offers || [];
+  const summaryRows = payload.summaries || [];
 
   const questionsByInterview = new Map();
   questionRows.forEach((item) => {
@@ -565,10 +566,13 @@ async function loadRemoteWorkspace() {
 async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
   const salary = parseMoneyParts(job.salary, "k");
-  const rows = await supabaseTable("jobs?select=*", {
+  const payload = await fetch("/api/jobs", {
     method: "POST",
+    headers: {
+      Authorization: `Bearer ${state.auth.session.access_token}`,
+      "content-type": "application/json"
+    },
     body: JSON.stringify({
-      user_id: state.auth.user.id,
       company: job.company,
       title: job.title,
       city: job.city,
@@ -583,8 +587,8 @@ async function createRemoteJobFromDemo(job) {
       logo: job.logo,
       logo_tone: job.logoTone
     })
-  });
-  return mapRemoteJob(rows[0]);
+  }).then((response) => readJsonResponse(response, "岗位保存失败。"));
+  return mapRemoteJob(payload.job);
 }
 
 async function updateRemoteJobFromDemo(job) {
