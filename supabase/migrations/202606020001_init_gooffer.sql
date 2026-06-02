@@ -264,6 +264,20 @@ create policy "ai_generation_runs_select_own" on public.ai_generation_runs for s
 drop policy if exists "analytics_events_insert_own" on public.analytics_events;
 create policy "analytics_events_insert_own" on public.analytics_events for insert with check (auth.uid() = user_id);
 
+grant usage on schema public to anon, authenticated, service_role;
+
+grant select on public.prompt_versions to authenticated, service_role;
+
+grant select, insert, update, delete on public.profiles to authenticated, service_role;
+grant select, insert, update, delete on public.jobs to authenticated, service_role;
+grant select, insert, update, delete on public.interviews to authenticated, service_role;
+grant select, insert, update, delete on public.interview_questions to authenticated, service_role;
+grant select, insert, update, delete on public.offers to authenticated, service_role;
+grant select, insert, update, delete on public.ai_summaries to authenticated, service_role;
+grant select, insert, update, delete on public.user_ai_providers to authenticated, service_role;
+grant select, insert, update, delete on public.ai_generation_runs to authenticated, service_role;
+grant select, insert on public.analytics_events to authenticated, service_role;
+
 create index if not exists jobs_user_id_updated_at_idx on public.jobs (user_id, updated_at desc);
 create index if not exists interviews_job_id_idx on public.interviews (job_id);
 create index if not exists interview_questions_interview_id_idx on public.interview_questions (interview_id);
