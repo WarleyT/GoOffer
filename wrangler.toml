@@ -1,0 +1,6 @@
+name = "gooffer"
+compatibility_date = "2026-06-02"
+pages_build_output_dir = "dist"
+
+[vars]
+APP_ENV = "production"
