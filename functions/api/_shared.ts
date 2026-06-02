@@ -5,6 +5,8 @@ export type Env = {
   SUPABASE_ANON_KEY?: string;
   SUPABASE_SERVICE_ROLE_KEY?: string;
   AI_API_KEY_ENCRYPTION_SECRET?: string;
+  VITE_SUPABASE_URL?: string;
+  VITE_SUPABASE_ANON_KEY?: string;
 };
 
 export type User = {

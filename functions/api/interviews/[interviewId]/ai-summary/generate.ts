@@ -114,6 +114,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
     generationId = run?.id || "";
 
+    await supabase.from("ai_summaries").insert({
+      user_id: user.id,
+      job_id: job.id,
+      interview_id: interview.id,
+      generation_id: generationId || null,
+      overview: String(summary.overview || ""),
+      strengths: Array.isArray(summary.strengths) ? summary.strengths : [],
+      improvements: Array.isArray(summary.improvements) ? summary.improvements : [],
+      next: Array.isArray(summary.next) ? summary.next : []
+    });
+
     await supabase.from("analytics_events").insert({
       user_id: user.id,
       event_name: "ai_summary_generated",

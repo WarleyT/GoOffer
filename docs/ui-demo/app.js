@@ -1,39 +1,120 @@
 const statuses = [
   "待投递",
   "已投递",
-  "沟通中",
-  "笔试",
-  "一面",
-  "二面",
-  "三面",
-  "四面",
-  "终面",
-  "等待结果",
-  "已拒绝",
-  "已放弃",
-  "已拿Offer"
+  "面试中",
+  "已拿Offer",
+  "被拒绝",
+  "已放弃"
 ];
 
 const interviewResults = ["待面试", "等待结果", "失败", "通过"];
+const statusOrder = new Map(statuses.map((status, index) => [status, index]));
+const defaultFunnelStatuses = ["已投递", "面试中", "已拿Offer", "被拒绝"];
+const priorities = ["高", "中", "低"];
+const priorityOrder = new Map(priorities.map((priority, index) => [priority, index]));
+const salaryUnits = ["k", "w"];
+const workStyles = ["线下", "远程", "出差"];
+
+const statusMeta = {
+  待投递: { title: "待投递", note: "准备投递", icon: "draft" },
+  已投递: { title: "已投递", note: "等待反馈", icon: "outbox" },
+  面试中: { title: "面试中", note: "持续推进", icon: "forum" },
+  已拿Offer: { title: "已拿 Offer", note: "可进行比较", icon: "celebration" },
+  被拒绝: { title: "被拒绝", note: "复盘沉淀", icon: "block" },
+  已放弃: { title: "已放弃", note: "暂不推进", icon: "do_not_disturb_on" }
+};
 
 const statusTone = {
   待投递: "todo",
   已投递: "applied",
-  沟通中: "talk",
-  笔试: "test",
-  一面: "interview",
-  二面: "interview",
-  三面: "interview",
-  四面: "interview",
-  终面: "interview",
-  等待结果: "wait",
-  已拒绝: "reject",
-  已放弃: "quit",
+  面试中: "interview",
   已拿Offer: "offer",
+  被拒绝: "reject",
+  已放弃: "quit",
   通过: "offer",
   待面试: "wait",
+  等待结果: "wait",
   失败: "reject"
 };
+
+function normalizeJobStatus(value) {
+  if (["沟通中", "笔试", "一面", "二面", "三面", "四面", "终面", "等待结果"].includes(value)) {
+    return "面试中";
+  }
+  if (value === "已拒绝") return "被拒绝";
+  return statuses.includes(value) ? value : "待投递";
+}
+
+function normalizePriority(value) {
+  if (value === "P1" || value === "高优先级") return "高";
+  if (value === "P2" || value === "中优先级") return "中";
+  if (value === "P3" || value === "P4" || value === "低优先级") return "低";
+  return priorities.includes(value) ? value : "中";
+}
+
+function priorityRank(priority) {
+  return priorityOrder.has(priority) ? priorityOrder.get(priority) : priorities.length;
+}
+
+function priorityTone(priority) {
+  return `priority-${priority === "高" ? "high" : priority === "中" ? "medium" : "low"}`;
+}
+
+function parseMoneyParts(value, fallbackUnit = "k") {
+  const raw = String(value || "").trim();
+  const normalized = raw
+    .replace(/^RMB\s*/i, "")
+    .replace(/^CNY\s*/i, "")
+    .replace(/^¥\s*/, "")
+    .replace(/^USD\s*/i, "")
+    .trim();
+  const unitMatch = normalized.match(/(w|k|万|千)\s*$/i);
+  const unit = unitMatch
+    ? (unitMatch[1].toLowerCase() === "w" || unitMatch[1] === "万" ? "w" : "k")
+    : fallbackUnit;
+  const amount = normalized
+    .replace(/(w|k|万|千)/gi, "")
+    .replace(/[^\d.\-~—–至到\s]/g, "")
+    .replace(/\s*(?:~|—|–|至|到|-)\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return { amount, unit: salaryUnits.includes(unit) ? unit : fallbackUnit };
+}
+
+function formatMoneyValue(amount, unit = "k") {
+  const normalizedAmount = String(amount || "")
+    .replace(/^RMB\s*/i, "")
+    .replace(/^CNY\s*/i, "")
+    .replace(/^¥\s*/, "")
+    .replace(/^USD\s*/i, "")
+    .replace(/(w|k|万|千)/gi, "")
+    .replace(/[^\d.\-~—–至到\s]/g, "")
+    .replace(/\s*(?:~|—|–|至|到|-)\s*/g, " - ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const safeUnit = salaryUnits.includes(unit) ? unit : "k";
+  return normalizedAmount ? `RMB ${normalizedAmount}${safeUnit}` : "面议";
+}
+
+function normalizeMoneyDisplay(value, fallbackUnit = "k") {
+  const parts = parseMoneyParts(value, fallbackUnit);
+  return parts.amount ? formatMoneyValue(parts.amount, parts.unit) : (String(value || "").trim() || "面议");
+}
+
+function moneyComparable(value) {
+  const { amount, unit } = parseMoneyParts(value);
+  const numbers = amount.match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
+  const base = numbers.length ? numbers.reduce((sum, number) => sum + number, 0) / numbers.length : 0;
+  return unit === "w" ? base * 10 : base;
+}
+
+function normalizeWorkStyle(value, city = "") {
+  const text = String(value || "").trim();
+  if (text.includes("远程") || city === "远程") return "远程";
+  if (text.includes("出差")) return "出差";
+  return "线下";
+}
 
 const jobs = [
   {
@@ -41,10 +122,10 @@ const jobs = [
     company: "ByteDance",
     title: "高级前端开发工程师",
     city: "北京",
-    salary: "35k - 50k",
+    salary: "RMB 35 - 50k",
     source: "内推",
-    priority: "P1",
-    status: "二面",
+    priority: "高",
+    status: "面试中",
     logo: "BD",
     logoTone: "logo-red",
     updated: "今天",
@@ -90,9 +171,9 @@ const jobs = [
     company: "腾讯",
     title: "资深产品经理",
     city: "深圳",
-    salary: "40k - 65k",
+    salary: "RMB 40 - 65k",
     source: "Boss 直聘",
-    priority: "P1",
+    priority: "高",
     status: "已投递",
     logo: "TX",
     logoTone: "logo-blue",
@@ -108,10 +189,10 @@ const jobs = [
     company: "微软",
     title: "Cloud PM",
     city: "苏州",
-    salary: "30k - 45k",
+    salary: "RMB 30 - 45k",
     source: "官网",
-    priority: "P2",
-    status: "等待结果",
+    priority: "中",
+    status: "面试中",
     logo: "MS",
     logoTone: "logo-blue",
     updated: "2 天前",
@@ -140,9 +221,9 @@ const jobs = [
     company: "美团",
     title: "UI 设计师",
     city: "上海",
-    salary: "25k - 40k",
+    salary: "RMB 25 - 40k",
     source: "猎头",
-    priority: "P2",
+    priority: "中",
     status: "已拿Offer",
     logo: "MT",
     logoTone: "logo-yellow",
@@ -154,9 +235,9 @@ const jobs = [
     aiSummary: null,
     offer: {
       location: "上海",
-      totalComp: "45w",
+      totalComp: "RMB 45w",
       cashWidth: 78,
-      workStyle: "混合办公",
+      workStyle: "线下",
       growth: 4,
       stability: 4,
       balance: 3,
@@ -170,9 +251,9 @@ const jobs = [
     company: "Shopify",
     title: "Growth Analyst",
     city: "远程",
-    salary: "USD 90k",
+    salary: "RMB 60 - 90k",
     source: "LinkedIn",
-    priority: "P3",
+    priority: "低",
     status: "已拿Offer",
     logo: "SF",
     logoTone: "logo-yellow",
@@ -184,7 +265,7 @@ const jobs = [
     aiSummary: null,
     offer: {
       location: "远程",
-      totalComp: "USD 90k",
+      totalComp: "RMB 90w",
       cashWidth: 72,
       workStyle: "远程",
       growth: 4,
@@ -206,15 +287,22 @@ const state = {
     status: "全部",
     city: "全部",
     priority: "全部",
-    sort: "更新时间",
-    view: "board"
+    sort: "投递进度",
+    view: "board",
+    funnel: true,
+    funnelStatuses: [...defaultFunnelStatuses]
   },
+  funnelPanelOpen: false,
   offerSelection: jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id),
   accountOpen: false,
   modal: null,
   modalError: "",
   activeInterviewId: null,
+  pendingDeleteJobId: "",
   jobSwitchDirection: "",
+  lastDragAt: 0,
+  suppressFunnelMotion: false,
+  funnelTransition: "",
   scrollPositions: {
     dashboard: 0,
     jobs: 0,
@@ -222,13 +310,120 @@ const state = {
     offers: 0
   },
   aiLoading: false,
-  toast: ""
+  toast: "",
+  booting: true,
+  auth: {
+    configured: false,
+    url: "",
+    anonKey: "",
+    session: null,
+    user: null,
+    mode: "signin"
+  },
+  aiProvider: null
 };
 
 const app = document.getElementById("app");
 const modalRoot = document.getElementById("modal-root");
 const toastRoot = document.getElementById("toast-root");
 let topbarCollapsed = false;
+const authStorageKey = "gooffer.supabase.session";
+
+function currentUserEmail() {
+  return state.auth.user?.email || state.auth.session?.user?.email || "未登录";
+}
+
+function currentUserInitials() {
+  const email = currentUserEmail();
+  if (!state.auth.session) return "GO";
+  return email.slice(0, 2).toUpperCase();
+}
+
+async function readJsonResponse(response, fallbackMessage) {
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.error?.message || payload?.msg || fallbackMessage);
+  }
+  return payload;
+}
+
+async function loadRuntimeConfig() {
+  const payload = await fetch("/api/config").then((response) => readJsonResponse(response, "读取配置失败。"));
+  state.auth.url = payload.supabase_url || "";
+  state.auth.anonKey = payload.supabase_anon_key || "";
+  state.auth.configured = Boolean(state.auth.url && state.auth.anonKey);
+}
+
+function authHeaders(extra = {}) {
+  const headers = {
+    apikey: state.auth.anonKey,
+    "content-type": "application/json",
+    ...extra
+  };
+  if (state.auth.session?.access_token) {
+    headers.Authorization = `Bearer ${state.auth.session.access_token}`;
+  }
+  return headers;
+}
+
+function saveSession(session) {
+  state.auth.session = session || null;
+  state.auth.user = session?.user || null;
+  if (session) {
+    localStorage.setItem(authStorageKey, JSON.stringify(session));
+  } else {
+    localStorage.removeItem(authStorageKey);
+  }
+}
+
+function restoreSession() {
+  try {
+    const raw = localStorage.getItem(authStorageKey);
+    if (!raw) return;
+    saveSession(JSON.parse(raw));
+  } catch {
+    saveSession(null);
+  }
+}
+
+async function signIn(email, password) {
+  const response = await fetch(`${state.auth.url}/auth/v1/token?grant_type=password`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ email, password })
+  });
+  const payload = await readJsonResponse(response, "登录失败，请检查邮箱和密码。");
+  saveSession(payload);
+  await loadRemoteWorkspace();
+}
+
+async function signUp(email, password) {
+  const response = await fetch(`${state.auth.url}/auth/v1/signup`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ email, password })
+  });
+  const payload = await readJsonResponse(response, "注册失败，请稍后再试。");
+  if (payload.access_token) {
+    saveSession(payload);
+    await loadRemoteWorkspace();
+  } else {
+    showToast("注册成功，请先完成邮箱确认后登录");
+  }
+}
+
+async function signOut() {
+  if (state.auth.session?.access_token) {
+    await fetch(`${state.auth.url}/auth/v1/logout`, {
+      method: "POST",
+      headers: authHeaders()
+    }).catch(() => null);
+  }
+  saveSession(null);
+  state.accountOpen = false;
+  showToast("已退出登录");
+  render();
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -243,13 +438,245 @@ function activeJob() {
   return jobs.find((job) => job.id === state.activeJobId) || jobs[0];
 }
 
+function isRemoteReady() {
+  return state.auth.configured && Boolean(state.auth.session?.access_token);
+}
+
+async function supabaseTable(path, options = {}) {
+  const response = await fetch(`${state.auth.url}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      ...authHeaders(options.headers || {}),
+      Prefer: options.prefer || "return=representation"
+    }
+  });
+  return readJsonResponse(response, "Supabase 请求失败。");
+}
+
+function remoteSalary(row, amountField = "salary_amount", unitField = "salary_unit", displayField = "salary_display") {
+  return row[displayField] || formatMoneyValue(row[amountField], row[unitField] || "k");
+}
+
+function mapRemoteJob(row, interviews = [], offer = null, summaries = []) {
+  return {
+    id: row.id,
+    company: row.company || "",
+    title: row.title || "",
+    city: row.city || "未填写",
+    salary: remoteSalary(row),
+    source: row.source || "手动录入",
+    priority: normalizePriority(row.priority),
+    status: normalizeJobStatus(row.status),
+    logo: row.logo || String(row.company || "GO").slice(0, 2).toUpperCase(),
+    logoTone: row.logo_tone || "logo-yellow",
+    updated: "刚刚",
+    nextInterview: interviews[0]?.time || "暂无",
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    description: row.description || "暂未补充岗位描述。",
+    interviews,
+    offer,
+    aiSummary: summaries[0] || null
+  };
+}
+
+function mapRemoteInterview(row, questions = []) {
+  const duration = row.duration_minutes ? `${row.duration_minutes} 分钟` : "时长待定";
+  return {
+    id: row.id,
+    round: `${row.round_label || "第一轮"}：${row.round_name || "未命名面试"}`,
+    time: row.time ? String(row.time).replace("T", " ").slice(0, 16) : "时间待定",
+    duration,
+    result: normalizeInterviewResult(row.result),
+    questions: questions.map((item) => ({
+      q: item.question || "",
+      a: item.answer || "暂未填写回答。"
+    }))
+  };
+}
+
+function mapRemoteOffer(row) {
+  if (!row) return null;
+  const totalComp = remoteSalary(row, "total_comp_amount", "total_comp_unit", "total_comp_display");
+  return {
+    location: row.location || "",
+    totalComp,
+    cashWidth: Math.min(96, Math.max(42, moneyComparable(totalComp) || 68)),
+    workStyle: row.work_style || "线下",
+    growth: Number(row.growth || 3),
+    stability: Number(row.stability || 3),
+    balance: Number(row.balance || 3),
+    interest: Number(row.interest || 3),
+    risk: row.risk || "暂无明显风险点。",
+    decision: row.decision || "待决定"
+  };
+}
+
+function mapRemoteSummary(row) {
+  if (!row) return null;
+  return {
+    overview: row.overview || "",
+    strengths: Array.isArray(row.strengths) ? row.strengths : [],
+    improvements: Array.isArray(row.improvements) ? row.improvements : [],
+    next: Array.isArray(row.next) ? row.next : []
+  };
+}
+
+async function loadRemoteWorkspace() {
+  if (!isRemoteReady()) return;
+  const [jobRows, interviewRows, questionRows, offerRows, summaryRows] = await Promise.all([
+    supabaseTable("jobs?select=*&order=updated_at.desc", { prefer: "" }),
+    supabaseTable("interviews?select=*&order=created_at.asc", { prefer: "" }),
+    supabaseTable("interview_questions?select=*&order=created_at.asc", { prefer: "" }),
+    supabaseTable("offers?select=*", { prefer: "" }),
+    supabaseTable("ai_summaries?select=*&order=created_at.desc", { prefer: "" })
+  ]);
+
+  const questionsByInterview = new Map();
+  questionRows.forEach((item) => {
+    const id = item.interview_id;
+    questionsByInterview.set(id, [...(questionsByInterview.get(id) || []), item]);
+  });
+
+  const interviewsByJob = new Map();
+  interviewRows.forEach((item) => {
+    const id = item.job_id;
+    const mapped = mapRemoteInterview(item, questionsByInterview.get(item.id) || []);
+    interviewsByJob.set(id, [...(interviewsByJob.get(id) || []), mapped]);
+  });
+
+  const offersByJob = new Map(offerRows.map((item) => [item.job_id, mapRemoteOffer(item)]));
+  const summariesByJob = new Map();
+  summaryRows.forEach((item) => {
+    const id = item.job_id;
+    summariesByJob.set(id, [...(summariesByJob.get(id) || []), mapRemoteSummary(item)]);
+  });
+
+  const nextJobs = jobRows.map((item) =>
+    mapRemoteJob(item, interviewsByJob.get(item.id) || [], offersByJob.get(item.id) || null, summariesByJob.get(item.id) || [])
+  );
+
+  if (nextJobs.length) {
+    jobs.splice(0, jobs.length, ...nextJobs);
+    state.activeJobId = nextJobs[0].id;
+    state.offerSelection = jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
+  }
+}
+
+async function createRemoteJobFromDemo(job) {
+  if (!isRemoteReady()) return job;
+  const salary = parseMoneyParts(job.salary, "k");
+  const rows = await supabaseTable("jobs?select=*", {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: state.auth.user.id,
+      company: job.company,
+      title: job.title,
+      city: job.city,
+      salary_amount: salary.amount,
+      salary_unit: salary.unit,
+      salary_display: job.salary,
+      source: job.source,
+      priority: job.priority,
+      status: job.status,
+      tags: job.tags,
+      description: job.description,
+      logo: job.logo,
+      logo_tone: job.logoTone
+    })
+  });
+  return mapRemoteJob(rows[0]);
+}
+
+async function updateRemoteJobFromDemo(job) {
+  if (!isRemoteReady()) return;
+  const salary = parseMoneyParts(job.salary, "k");
+  await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      company: job.company,
+      title: job.title,
+      city: job.city,
+      salary_amount: salary.amount,
+      salary_unit: salary.unit,
+      salary_display: job.salary,
+      source: job.source,
+      priority: job.priority,
+      status: job.status,
+      tags: job.tags,
+      description: job.description
+    })
+  });
+}
+
+async function deleteRemoteJobFromDemo(jobId) {
+  if (!isRemoteReady()) return;
+  await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, { method: "DELETE" });
+}
+
+async function saveRemoteInterviewFromDemo(job, interview) {
+  if (!isRemoteReady()) return;
+  const roundParts = splitRoundName(interview.round, job.interviews.indexOf(interview));
+  const rows = await supabaseTable("interviews?select=id", {
+    method: "POST",
+    body: JSON.stringify({
+      user_id: state.auth.user.id,
+      job_id: job.id,
+      round_label: roundParts.label,
+      round_name: roundParts.name || "未命名面试",
+      time: interview.time === "时间待定" ? null : interview.time,
+      duration_minutes: parseDurationAmount(interview.duration),
+      result: interview.result
+    })
+  });
+  const interviewId = rows[0]?.id;
+  if (interviewId && interview.questions.length) {
+    await supabaseTable("interview_questions", {
+      method: "POST",
+      body: JSON.stringify(interview.questions.map((item) => ({
+        user_id: state.auth.user.id,
+        interview_id: interviewId,
+        question: item.q,
+        answer: item.a
+      })))
+    });
+    interview.id = interviewId;
+  }
+  await updateRemoteJobFromDemo({ ...job, status: "面试中" });
+}
+
+async function saveRemoteOfferFromDemo(job) {
+  if (!isRemoteReady() || !job.offer) return;
+  const total = parseMoneyParts(job.offer.totalComp, "w");
+  await supabaseTable("offers", {
+    method: "POST",
+    prefer: "resolution=merge-duplicates,return=representation",
+    body: JSON.stringify({
+      user_id: state.auth.user.id,
+      job_id: job.id,
+      location: job.offer.location,
+      total_comp_amount: total.amount,
+      total_comp_unit: total.unit,
+      total_comp_display: job.offer.totalComp,
+      work_style: job.offer.workStyle,
+      growth: job.offer.growth,
+      stability: job.offer.stability,
+      balance: job.offer.balance,
+      interest: job.offer.interest,
+      risk: job.offer.risk,
+      decision: job.offer.decision
+    })
+  });
+  await updateRemoteJobFromDemo({ ...job, status: "已拿Offer" });
+}
+
 function activeInterview() {
   const job = activeJob();
-  return job.interviews.find((interview) => interview.id === state.activeInterviewId) || null;
+  return job?.interviews?.find((interview) => interview.id === state.activeInterviewId) || null;
 }
 
 function activeJobIndex() {
-  return Math.max(0, jobs.findIndex((job) => job.id === activeJob().id));
+  const job = activeJob();
+  return job ? Math.max(0, jobs.findIndex((item) => item.id === job.id)) : 0;
 }
 
 function jobOffers() {
@@ -264,6 +691,25 @@ function selectedOfferJobs() {
   return selectedIds
     .map((id) => available.find((job) => job.id === id))
     .filter(Boolean);
+}
+
+function statusRank(status) {
+  return statusOrder.has(status) ? statusOrder.get(status) : statuses.length;
+}
+
+function compareByProgress(a, b) {
+  const rankDiff = statusRank(a.status) - statusRank(b.status);
+  if (rankDiff !== 0) return rankDiff;
+  return a.company.localeCompare(b.company, "zh-Hans-CN");
+}
+
+function visibleFunnelStatuses() {
+  const selected = new Set(state.filters.funnelStatuses);
+  return statuses.filter((status) => selected.has(status));
+}
+
+function jobsByStatus(list, status) {
+  return list.filter((job) => job.status === status);
 }
 
 function badge(label, extra = "") {
@@ -361,8 +807,8 @@ function ensureOffer(job) {
   job.offer = {
     location: job.city || "待确认",
     totalComp: job.salary || "面议",
-    cashWidth: Math.min(96, Math.max(42, Number.parseInt(job.salary, 10) || 64)),
-    workStyle: isSourceLink(job.source) ? "链接投递" : (job.source || "待确认"),
+    cashWidth: Math.min(96, Math.max(42, moneyComparable(job.salary) || 64)),
+    workStyle: normalizeWorkStyle(job.offer?.workStyle, job.city),
     growth: 3,
     stability: 3,
     balance: 3,
@@ -386,7 +832,11 @@ function syncJobData(job) {
   }
 }
 
-jobs.forEach(syncJobData);
+jobs.forEach((job) => {
+  job.status = normalizeJobStatus(job.status);
+  job.priority = normalizePriority(job.priority);
+  syncJobData(job);
+});
 
 function customSelect({ name = "", id = "", label = "", options = [], value = "", className = "", attrs = "", displayPrefix = "" }) {
   const normalizedOptions = options.map(String);
@@ -489,6 +939,9 @@ function renderShell(content) {
   const sidebarStateClass = state.sidebarCollapsed ? " sidebar-collapsed" : "";
   const sidebarMenu = sidebarMenuMeta();
   const navUp = navUpMeta();
+  const totalJobs = Math.max(1, jobs.length);
+  const offerProgress = Math.min(100, (jobOffers().length / totalJobs) * 100).toFixed(2);
+  const appliedProgress = Math.min(100, ((jobs.filter((job) => job.status === "已投递").length + jobOffers().length) / totalJobs) * 100).toFixed(2);
   const topbarActions = {
     dashboard: button("新增岗位", "open-job-modal"),
     jobs: button("新增岗位", "open-job-modal"),
@@ -504,8 +957,13 @@ function renderShell(content) {
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
           <div class="brand-mark material-symbols-outlined" aria-hidden="true">workspaces</div>
-          <div class="brand-name">GoOffer</div>
-          <div class="brand-subtitle">个人求职工作台</div>
+          <div class="brand-name brand-logo" aria-label="GoOffer">
+            <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
+          </div>
+          <div class="brand-progress" aria-label="投递进度：已拿 Offer ${jobOffers().length} 个，已投递 ${jobs.filter((job) => job.status === "已投递").length} 个，总岗位 ${jobs.length} 个" style="--offer-progress:${offerProgress}%; --applied-progress:${appliedProgress}%;">
+            <span class="brand-progress-applied"></span>
+            <span class="brand-progress-offer"></span>
+          </div>
         </div>
         <nav class="side-nav">
           ${navItem("dashboard", "Dashboard", "dashboard")}
@@ -519,10 +977,10 @@ function renderShell(content) {
             <span class="sidebar-toggle-label">${sidebarMenu.label}</span>
           </button>
           <button class="sidebar-user" type="button" data-action="toggle-account" aria-haspopup="dialog" aria-expanded="${state.accountOpen}">
-            <span class="avatar">WT</span>
+            <span class="avatar">${escapeHtml(currentUserInitials())}</span>
             <div>
-              <strong>WarleyT</strong>
-              <span>密集投递中</span>
+              <strong>${escapeHtml(state.auth.session ? currentUserEmail().split("@")[0] : "GoOffer")}</strong>
+              <span>${state.auth.session ? "已登录" : "未登录"}</span>
             </div>
           </button>
         </div>
@@ -562,13 +1020,14 @@ function renderShell(content) {
 }
 
 function renderAccountPopover() {
+  const email = currentUserEmail();
   return `
     <section class="account-popover" role="dialog" aria-label="个人账号">
       <div class="account-popover-head">
-        <span class="avatar">WT</span>
+        <span class="avatar">${escapeHtml(currentUserInitials())}</span>
         <div>
-          <strong>WarleyT</strong>
-          <span>warleyt@example.com</span>
+          <strong>${escapeHtml(state.auth.session ? email.split("@")[0] : "未登录")}</strong>
+          <span>${escapeHtml(email)}</span>
         </div>
       </div>
       <div class="account-popover-grid">
@@ -581,64 +1040,102 @@ function renderAccountPopover() {
           <small>Offer</small>
         </span>
       </div>
-      <button class="account-popover-row" type="button" data-action="toast" data-message="账号设置会在后续版本接入">
+      <button class="account-popover-row" type="button" data-action="${state.auth.session ? "open-ai-settings" : "open-login"}">
         <span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>
-        账号设置
+        ${state.auth.session ? "AI API 设置" : "登录账号"}
       </button>
-      <button class="account-popover-row" type="button" data-action="toast" data-message="已保持登录状态">
+      <button class="account-popover-row" type="button" data-action="${state.auth.session ? "logout" : "open-login"}">
         <span class="material-symbols-outlined" aria-hidden="true">lock</span>
-        登录安全
+        ${state.auth.session ? "退出登录" : "登录后同步数据"}
       </button>
     </section>
   `;
 }
 
 function renderDashboard() {
-  const interviewing = jobs.filter((job) => ["一面", "二面", "三面", "四面", "终面"].includes(job.status));
-  const followUps = jobs.filter((job) => ["已投递", "沟通中", "笔试", "等待结果"].includes(job.status)).slice(0, 3);
-  const waiting = jobs.filter((job) => job.status === "等待结果");
+  const applied = jobs.filter((job) => job.status === "已投递");
+  const interviewing = jobs.filter((job) => job.status === "面试中");
   const offers = jobOffers();
+  const reviewJob = jobs.find((job) => job.aiSummary) || jobs.find((job) => job.interviews.length) || jobs[0];
 
   return `
     <section class="grid metric-grid">
-      ${metricButton("投递总数", jobs.length, "活跃中", "nav", "", `data-screen="jobs"`)}
-      ${metricButton("正在面试", interviewing.length, "即将开始", "scroll-section", "highlight", `data-target="recent-interviews"`)}
-      ${metricButton("等待结果", waiting.length, "等待反馈", "scroll-section", "", `data-target="follow-up-section"`)}
+      ${metricButton("岗位总数", jobs.length, "活跃中", "nav", "", `data-screen="jobs"`)}
+      ${metricButton("已投递", applied.length, "等待反馈", "nav", "", `data-screen="jobs"`)}
+      ${metricButton("正在面试", interviewing.length, "持续推进", "scroll-section", "highlight", `data-target="recent-interviews"`)}
       ${metricButton("收获 Offer", offers.length, "恭喜！", "nav", "dark", `data-screen="offers"`)}
     </section>
 
     <section class="grid bento-grid">
-      <article class="card card-pad panel-list" id="recent-interviews">
+      <article class="card card-pad panel-list dashboard-funnel-card">
+        <div class="section-head">
+          <h2>投递漏斗</h2>
+          <span class="text-link" data-action="nav" data-screen="jobs">查看全部</span>
+        </div>
+        ${renderDashboardFunnel()}
+      </article>
+
+      <article class="card card-pad ai-hero dashboard-interview-card" id="recent-interviews">
         <div class="section-head">
           <h2>近期面试</h2>
           <span class="text-link" data-action="nav" data-screen="jobs">查看全部</span>
         </div>
-        <div class="stack">
+        <div class="stack dashboard-interview-list">
           ${interviewing.map((job) => dataRow(job.company, `${job.title} · ${job.nextInterview}`, badge(job.status), `data-action="select-job" data-job-id="${job.id}"`)).join("")}
           ${interviewing.length ? "" : emptyInline("还没有面试安排")}
         </div>
       </article>
 
-      <article class="card card-pad ai-hero interactive-card">
-        <span class="eyebrow">复盘</span>
-        <h2>面试复盘报告已生成</h2>
-        <p class="description">基于 ByteDance 技术初试记录，整理出 3 个可以补强的工程表达点。</p>
-        <div style="margin-top: 24px;">${button("查看复盘", "nav-detail", "dark")}</div>
-      </article>
-
-      <article class="card card-pad full-span" id="follow-up-section">
+      <article class="card card-pad full-span dashboard-review-card" id="follow-up-section">
         <div class="section-head">
-          <h2>待跟进</h2>
-          <div class="topbar-actions">
-            <button class="icon-button" type="button" data-action="nav" data-screen="jobs" aria-label="筛选岗位">筛</button>
-            <button class="icon-button" type="button" data-action="open-job-modal" aria-label="新增岗位">+</button>
-          </div>
+          <h2>最近一次面试复盘</h2>
+          <span class="badge ai-chip">复盘</span>
         </div>
-        <div class="grid jobs-grid">
-          ${followUps.map((job) => taskCard(job)).join("")}
+        <div class="dashboard-review-body">
+          <span class="logo-tile compact ${reviewJob.logoTone}">${escapeHtml(reviewJob.logo)}</span>
+          <div>
+            <h3>${escapeHtml(reviewJob.company)} · ${escapeHtml(reviewJob.title)}</h3>
+            <p>${escapeHtml(reviewJob.aiSummary?.overview || "当前岗位还没有总结。记录面试问题和回答后，可以生成结构化复盘。")}</p>
+            <div class="tag-row">
+              ${(reviewJob.aiSummary?.next || ["补充面试问题", "记录回答重点", "生成复盘"]).slice(0, 3).map((item) => `<span class="badge todo">${escapeHtml(item)}</span>`).join("")}
+            </div>
+          </div>
+          <div>${button(reviewJob.aiSummary ? "查看复盘" : "进入详情", "select-job", "dark", `data-job-id="${reviewJob.id}"`)}</div>
         </div>
       </article>
     </section>
+  `;
+}
+
+function renderDashboardFunnel() {
+  return `
+    <div class="mini-funnel">
+      ${statuses.map((status) => {
+        const meta = statusMeta[status];
+        const items = jobsByStatus(jobs, status);
+        const title = status === "已拿Offer" ? "offer" : meta.title;
+        return `
+          <section class="mini-funnel-step ${statusTone[status]}">
+            <div class="mini-funnel-head">
+              <span class="material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
+              <strong>${title}</strong>
+              <small>${jobsByStatus(jobs, status).length}</small>
+            </div>
+            <div class="mini-funnel-jobs">
+              ${items.map((job) => `
+                <button type="button" data-action="select-job" data-job-id="${job.id}">
+                  <span>
+                    <strong>${escapeHtml(job.company)}</strong>
+                    <small>${escapeHtml(job.title)}</small>
+                  </span>
+                </button>
+              `).join("")}
+              ${items.length ? "" : `<span class="mini-empty">暂无</span>`}
+            </div>
+          </section>
+        `;
+      }).join("")}
+    </div>
   `;
 }
 
@@ -660,7 +1157,7 @@ function taskCard(job) {
       <span class="logo-tile compact ${job.logoTone}">${escapeHtml(job.logo)}</span>
       <div>
         <div class="row-title">${escapeHtml(job.company)} · ${escapeHtml(job.title)}</div>
-        <div class="row-meta">${escapeHtml(job.status === "笔试" ? "今晚前完成笔试，并记录题目" : `${job.updated} 更新 · ${job.nextInterview}`)}</div>
+        <div class="row-meta">${escapeHtml(`${job.updated} 更新 · ${job.nextInterview}`)}</div>
       </div>
       ${badge(job.status)}
     </button>
@@ -675,9 +1172,7 @@ function filteredJobs() {
   const query = state.filters.query.trim().toLowerCase();
   const filtered = jobs.filter((job) => {
     const matchQuery = !query || `${job.company} ${job.title} ${job.city} ${job.tags.join(" ")}`.toLowerCase().includes(query);
-    const matchStatus = state.filters.status === "全部"
-      || (state.filters.status === "面试中" && statusTone[job.status] === "interview")
-      || job.status === state.filters.status;
+    const matchStatus = state.filters.status === "全部" || job.status === state.filters.status;
     const matchCity = state.filters.city === "全部" || job.city === state.filters.city;
     const matchPriority = state.filters.priority === "全部" || job.priority === state.filters.priority;
     return matchQuery && matchStatus && matchCity && matchPriority;
@@ -685,22 +1180,40 @@ function filteredJobs() {
 
   const order = [...filtered];
   if (state.filters.sort === "薪资") {
-    order.sort((a, b) => Number.parseInt(b.salary, 10) - Number.parseInt(a.salary, 10));
+    order.sort((a, b) => moneyComparable(b.salary) - moneyComparable(a.salary) || compareByProgress(a, b));
+    return order;
   }
   if (state.filters.sort === "优先级") {
-    order.sort((a, b) => a.priority.localeCompare(b.priority));
+    order.sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority) || compareByProgress(a, b));
+    return order;
   }
+  if (state.filters.sort === "更新时间") return order;
+  order.sort(compareByProgress);
   return order;
 }
 
 function renderJobs() {
   const list = filteredJobs();
   const cities = ["全部", ...Array.from(new Set(jobs.map((job) => job.city)))];
-  const priorities = ["全部", ...Array.from(new Set(jobs.map((job) => job.priority)))];
+  const priorityOptions = ["全部", ...priorities];
   const metricActive = (status) => state.filters.status === status ? "highlight" : "";
   const currentViewIcon = state.filters.view === "list" ? "view_list" : "view_module";
   const nextView = state.filters.view === "list" ? "board" : "list";
   const nextViewLabel = state.filters.view === "list" ? "切换到看板视图" : "切换到列表视图";
+  const shownContent = state.filters.funnel
+    ? renderFunnelJobs(list)
+    : state.filters.view === "list" ? renderJobsList(list) : `
+      <section class="grid jobs-grid">
+        ${list.map((job) => renderJobCard(job)).join("")}
+        <button class="add-card" type="button" data-action="open-job-modal">
+          <span>
+            <span class="add-card-icon"><span class="material-symbols-outlined" aria-hidden="true">add</span></span>
+            <strong>添加新岗位</strong>
+            <small>记录你的每一次尝试</small>
+          </span>
+        </button>
+      </section>
+    `;
 
   return pageHeader(
     "岗位",
@@ -712,36 +1225,171 @@ function renderJobs() {
         <input id="job-search" value="${escapeHtml(state.filters.query)}" placeholder="搜索公司、岗位、城市或标签" aria-label="搜索岗位">
       </label>
       ${selectControl("city-filter", "城市", cities, state.filters.city)}
-      ${selectControl("priority-filter", "优先级", priorities, state.filters.priority)}
-      ${selectControl("sort-filter", "排序", ["更新时间", "薪资", "优先级"], state.filters.sort)}
-      <div class="view-switch" role="group" aria-label="视图切换">
-        <button class="active" type="button" data-action="set-view" data-view="${nextView}" aria-label="${nextViewLabel}" title="${nextViewLabel}">
-          <span class="material-symbols-outlined" aria-hidden="true">${currentViewIcon}</span>
-        </button>
+      ${selectControl("priority-filter", "优先级", priorityOptions, state.filters.priority)}
+      ${selectControl("sort-filter", "排序", ["投递进度", "更新时间", "薪资", "优先级"], state.filters.sort)}
+      <div class="jobs-view-tools">
+        ${renderFunnelControls()}
+        <div class="view-switch" role="group" aria-label="视图切换">
+          <button class="active" type="button" data-action="set-view" data-view="${nextView}" aria-label="${nextViewLabel}" title="${nextViewLabel}">
+            <span class="material-symbols-outlined" aria-hidden="true">${currentViewIcon}</span>
+          </button>
+        </div>
       </div>
     </section>
 
-    <section class="grid metric-grid">
-      ${metricButton("投递总数", jobs.length, "所有岗位记录", "filter-jobs", metricActive("全部"), `data-filter-status="全部"`)}
-      ${metricButton("面试中", jobs.filter((job) => statusTone[job.status] === "interview").length, "一面到终面", "filter-jobs", metricActive("面试中"), `data-filter-status="面试中"`)}
-      ${metricButton("等待结果", jobs.filter((job) => job.status === "等待结果").length, "等待反馈", "filter-jobs", metricActive("等待结果"), `data-filter-status="等待结果"`)}
-      ${metricButton("已拿 Offer", jobOffers().length, "可进行比较", "filter-jobs", metricActive("已拿Offer"), `data-filter-status="已拿Offer"`)}
-    </section>
-
-    ${state.filters.view === "list" ? renderJobsList(list) : `
-      <section class="grid jobs-grid">
-        ${list.map((job) => renderJobCard(job)).join("")}
-        <button class="add-card" type="button" data-action="open-job-modal">
-          <span>
-            <span class="add-card-icon"><span class="material-symbols-outlined" aria-hidden="true">add</span></span>
-            <strong>添加新岗位</strong>
-            <small>记录你的每一次尝试</small>
-          </span>
-        </button>
+    ${state.filters.funnel ? "" : `
+      <section class="grid metric-grid">
+        ${defaultFunnelStatuses.map((status) => {
+          const meta = statusMeta[status];
+          return metricButton(meta.title, jobs.filter((job) => job.status === status).length, meta.note, "filter-jobs", metricActive(status), `data-filter-status="${status}"`);
+        }).join("")}
       </section>
     `}
 
+    <div class="jobs-content-transition ${state.funnelTransition ? `funnel-${state.funnelTransition}` : ""}">
+      ${shownContent}
+    </div>
     ${list.length ? "" : emptyInline("没有匹配的岗位，调整筛选条件再试试。")}
+  `;
+}
+
+function renderFunnelControls() {
+  if (!state.filters.funnel) {
+    return `
+      <div class="funnel-standalone ${state.funnelTransition === "closing" ? "is-closing" : ""}">
+        <button class="funnel-icon-button" type="button" data-action="toggle-funnel" aria-label="开启漏斗视图" title="开启漏斗视图" aria-pressed="false">
+          <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+        </button>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="funnel-controls active ${state.funnelTransition === "opening" ? "is-opening" : ""}">
+      <button class="funnel-segment primary" type="button" data-action="toggle-funnel" aria-label="关闭漏斗视图" title="关闭漏斗视图" aria-pressed="true">
+        <span class="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>
+      </button>
+      <button class="funnel-segment secondary" type="button" data-action="toggle-funnel-panel" aria-label="选择显示板块" title="选择显示板块" aria-expanded="${state.funnelPanelOpen}">
+        <span class="material-symbols-outlined" aria-hidden="true">view_column</span>
+      </button>
+      ${state.funnelPanelOpen ? renderFunnelPanel() : ""}
+    </div>
+  `;
+}
+
+function renderFunnelPanel() {
+  const selected = new Set(state.filters.funnelStatuses);
+  return `
+    <section class="funnel-panel" aria-label="选择漏斗板块">
+      <div class="funnel-panel-title">显示板块</div>
+      ${statuses.map((status) => {
+        const meta = statusMeta[status];
+        return `
+          <label class="funnel-status-option">
+            <input type="checkbox" value="${status}" data-funnel-status-toggle ${selected.has(status) ? "checked" : ""}>
+            <span class="material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
+            <span>${meta.title}</span>
+          </label>
+        `;
+      }).join("")}
+    </section>
+  `;
+}
+
+function renderFunnelJobs(list) {
+  const visibleStatuses = visibleFunnelStatuses();
+  if (!visibleStatuses.length) {
+    return `<section class="card card-pad funnel-empty">${emptyInline("请选择至少一个漏斗板块。")}</section>`;
+  }
+
+  return state.filters.view === "list"
+    ? renderFunnelList(list, visibleStatuses)
+    : renderFunnelBoard(list, visibleStatuses);
+}
+
+function renderFunnelBoard(list, visibleStatuses) {
+  return `
+    <section class="funnel-board ${state.suppressFunnelMotion ? "no-motion" : ""}" aria-label="漏斗看板" style="--funnel-columns:${visibleStatuses.length};">
+      ${visibleStatuses.map((status) => renderFunnelColumn(status, jobsByStatus(list, status))).join("")}
+    </section>
+  `;
+}
+
+function renderFunnelColumn(status, items) {
+  const meta = statusMeta[status];
+  return `
+    <section class="funnel-column ${statusTone[status]}" data-funnel-drop-status="${status}">
+      <header class="funnel-column-head">
+        <span class="funnel-column-icon material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
+        <div>
+          <h2>${meta.title}</h2>
+          <small>${items.length} 个岗位 · ${meta.note}</small>
+        </div>
+      </header>
+      <div class="funnel-column-body">
+        ${items.map((job) => renderFunnelJobCard(job)).join("")}
+        ${items.length ? "" : emptyInline("拖入岗位后会自动更新状态。")}
+      </div>
+    </section>
+  `;
+}
+
+function renderFunnelJobCard(job) {
+  return `
+    <article class="funnel-job-card" role="button" tabindex="0" draggable="true" data-action="select-job" data-job-id="${job.id}" data-drag-job-id="${job.id}">
+      <span class="logo-tile compact ${job.logoTone}">${escapeHtml(job.logo)}</span>
+      <div>
+        <strong>${escapeHtml(job.company)} · ${escapeHtml(job.title)}</strong>
+        <small>${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</small>
+      </div>
+      <div class="tag-row">
+        ${job.tags.slice(0, 3).map((tag) => `<span class="badge todo">${escapeHtml(tag)}</span>`).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderFunnelList(list, visibleStatuses) {
+  return `
+    <section class="funnel-list ${state.suppressFunnelMotion ? "no-motion" : ""}" aria-label="漏斗列表">
+      ${visibleStatuses.map((status) => renderFunnelListSection(status, jobsByStatus(list, status))).join("")}
+    </section>
+  `;
+}
+
+function renderFunnelListSection(status, items) {
+  const meta = statusMeta[status];
+  return `
+    <section class="card funnel-list-section ${statusTone[status]}" data-funnel-drop-status="${status}">
+      <header class="funnel-list-head">
+        <span class="funnel-column-icon material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
+        <div>
+          <h2>${meta.title}</h2>
+          <small>${items.length} 个岗位 · ${meta.note}</small>
+        </div>
+      </header>
+      <div class="funnel-list-body">
+        ${items.map((job) => renderFunnelListRow(job)).join("")}
+        ${items.length ? "" : emptyInline("把岗位拖到这里即可改为该状态。")}
+      </div>
+    </section>
+  `;
+}
+
+function renderFunnelListRow(job) {
+  return `
+    <article class="funnel-list-row" role="button" tabindex="0" draggable="true" data-action="select-job" data-job-id="${job.id}" data-drag-job-id="${job.id}">
+      <span class="logo-tile compact ${job.logoTone}">${escapeHtml(job.logo)}</span>
+      <span class="job-list-main">
+        <strong>${escapeHtml(job.title)}</strong>
+        <small>${escapeHtml(job.company)} · ${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</small>
+      </span>
+      <span class="job-list-meta">${escapeHtml(job.updated)} 更新</span>
+      <span class="priority-chip ${priorityTone(job.priority)}">
+        <span class="material-symbols-outlined" aria-hidden="true">star</span>
+        ${escapeHtml(job.priority)} 优先级
+      </span>
+    </article>
   `;
 }
 
@@ -757,7 +1405,7 @@ function renderJobsList(list) {
           </span>
           <span class="job-list-meta">${escapeHtml(job.updated)} 更新</span>
           <span class="job-list-status">${badge(job.status)}</span>
-          <span class="priority-chip">
+          <span class="priority-chip ${priorityTone(job.priority)}">
             <span class="material-symbols-outlined" aria-hidden="true">star</span>
             ${escapeHtml(job.priority)} 优先级
           </span>
@@ -799,7 +1447,7 @@ function renderJobCard(job) {
           <div class="salary-label">薪资范围</div>
           <div class="salary">${escapeHtml(job.salary)}</div>
         </div>
-        <span class="priority-chip">
+        <span class="priority-chip ${priorityTone(job.priority)}">
           <span class="material-symbols-outlined" aria-hidden="true">star</span>
           ${escapeHtml(job.priority)} 优先级
         </span>
@@ -810,6 +1458,17 @@ function renderJobCard(job) {
 
 function renderDetail() {
   const job = activeJob();
+  if (!job) {
+    return pageHeader(
+      "Job Detail",
+      "岗位详情、面试记录和总结沉淀在同一页。"
+    ) + `
+      <section class="card card-pad">
+        ${emptyInline("还没有岗位记录，先新增一个岗位。")}
+        <div style="margin-top: 20px;">${button("新增岗位", "open-job-modal")}</div>
+      </section>
+    `;
+  }
   const transitionClass = state.jobSwitchDirection ? ` detail-transition-${state.jobSwitchDirection}` : "";
 
   return pageHeader(
@@ -1020,20 +1679,22 @@ function renderAiCard(job) {
 function renderOffers() {
   const offers = selectedOfferJobs();
   const best = offers.reduce((winner, job) => (offerScore(job.offer) > offerScore(winner.offer) ? job : winner), offers[0] || null);
+  const showAddCard = offers.length < 5;
+  const gridCount = Math.max(1, offers.length + (showAddCard ? 1 : 0));
 
   return pageHeader(
     "Offer 对比",
     "从薪资、成长、稳定性和偏好横向比较 Offer。"
   ) + `
-    <section class="grid offers-grid">
+    <section class="grid offers-grid" style="--offer-grid-count:${gridCount};">
       ${offers.map((job) => renderOfferCard(job, best && best.id === job.id)).join("")}
-      <button class="add-card" type="button" data-action="open-offer-select-modal">
+      ${showAddCard ? `<button class="add-card" type="button" data-action="open-offer-select-modal">
         <span>
           <span class="add-card-icon">+</span>
           <strong>选择已有Offer</strong>
           <small>从已拿 Offer 中选择 2-5 个进行对比</small>
         </span>
-      </button>
+      </button>` : ""}
     </section>
     ${offers.length ? renderDecisionSection(best, offers) : emptyInline("还没有选择 Offer，选择后即可进行横向比较。")}
   `;
@@ -1119,7 +1780,10 @@ function renderModal() {
     job: renderJobModal,
     interview: renderInterviewModal,
     offer: renderOfferModal,
-    offerSelect: renderOfferSelectModal
+    offerSelect: renderOfferSelectModal,
+    deleteJob: renderDeleteJobModal,
+    login: renderLoginModal,
+    aiSettings: renderAiSettingsModal
   };
   return map[state.modal] ? map[state.modal]() : "";
 }
@@ -1142,21 +1806,65 @@ function modalShell(title, body, footer) {
   `;
 }
 
+function renderLoginModal() {
+  const isSignup = state.auth.mode === "signup";
+  const body = `
+    <form class="form-grid job-edit-form" id="login-form">
+      ${formSection(isSignup ? "注册账号" : "登录账号", "登录后岗位、面试和 Offer 会同步到 Supabase，AI 功能也会使用你的个人 API Key。", "account_circle", `
+        ${field("email", "邮箱", "", "you@example.com")}
+        ${field("password", "密码", "", "至少 6 位")}
+      `)}
+      <button class="account-popover-row" type="button" data-action="toggle-auth-mode">
+        <span class="material-symbols-outlined" aria-hidden="true">sync_alt</span>
+        ${isSignup ? "已有账号？切换到登录" : "没有账号？切换到注册"}
+      </button>
+    </form>
+  `;
+  return modalShell(
+    isSignup ? "注册 GoOffer" : "登录 GoOffer",
+    body,
+    `${button("取消", "close-modal", "surface")} ${button(isSignup ? "注册" : "登录", isSignup ? "signup" : "login")}`
+  );
+}
+
+function renderAiSettingsModal() {
+  const provider = state.aiProvider;
+  const body = `
+    <form class="form-grid job-edit-form" id="ai-settings-form">
+      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，只用于你的截图识别和面试总结。", "auto_awesome", `
+        ${field("baseUrl", "Base URL", provider?.base_url || "https://api.openai.com/v1", "https://api.openai.com/v1")}
+        ${field("model", "模型", provider?.model || "gpt-4o-mini", "gpt-4o-mini")}
+        ${field("apiKey", "API Key", "", provider?.api_key_hint || "sk-...")}
+        <label class="checkbox-row">
+          <input type="checkbox" name="supportsVision" ${provider?.supports_vision === false ? "" : "checked"}>
+          <span>这个模型支持图片识别</span>
+        </label>
+      `)}
+      ${provider ? `<div class="empty-dash">当前已绑定：${escapeHtml(provider.model)} · ${escapeHtml(provider.api_key_hint || "")}</div>` : ""}
+    </form>
+  `;
+  return modalShell(
+    "AI API 设置",
+    body,
+    `${button("取消", "close-modal", "surface")} ${provider ? button("测试连接", "test-ai-provider", "surface") : ""} ${button("保存设置", "save-ai-provider")}`
+  );
+}
+
 function renderJobModal() {
   const job = activeJob();
-  const editing = state.screen === "detail";
+  const editing = state.screen === "detail" && Boolean(job);
   const body = `
     <form class="form-grid job-edit-form" id="job-form">
       ${formSection("基础信息", "公司、岗位、城市和薪资先定好，后续筛选才好用。", "business_center", `
         ${field("company", "公司名称", editing ? job.company : "", "例如 ByteDance")}
         ${field("title", "岗位名称", editing ? job.title : "", "例如 前端工程师")}
         ${field("city", "城市", editing ? job.city : "", "例如 上海")}
-        ${field("salary", "薪资范围", editing ? job.salary : "", "例如 25k - 35k")}
+        ${moneyField("salary", "薪资范围", editing ? job.salary : "", "35 - 50", "k")}
         ${textareaField("description", "岗位要求", editing ? job.description : "", "补充岗位职责、要求或备注")}
       `, editing ? "" : jobRecognitionButton(), editing ? "" : "data-job-recognition")}
       ${formSection("投递信息", "记录当前阶段、优先级、来源和可检索标签。", "track_changes", `
         ${selectField("status", "投递状态", statuses, editing ? job.status : "待投递")}
-        ${selectField("priority", "优先级", ["P1", "P2", "P3", "P4"], editing ? job.priority : "P2")}
+        ${selectField("priority", "优先级", priorities, editing ? job.priority : "中")}
         ${field("source", "投递渠道", editing ? job.source : "", "粘贴投递链接")}
         ${tagField("tags", "标签", editing ? job.tags.join("，") : "")}
       `)}
@@ -1165,7 +1873,38 @@ function renderJobModal() {
   return modalShell(
     editing ? "编辑岗位" : "新增岗位",
     body,
-    `${button("取消", "close-modal", "surface")} ${button(editing ? "保存修改" : "保存岗位", editing ? "save-job-edit" : "save-job")}`
+    editing
+      ? `
+        <div class="modal-footer-split">
+          ${button(`<span class="material-symbols-outlined" aria-hidden="true">delete</span>删除岗位`, "confirm-delete-job", "danger")}
+          <span>
+            ${button("取消", "close-modal", "surface")}
+            ${button("保存修改", "save-job-edit")}
+          </span>
+        </div>
+      `
+      : `${button("取消", "close-modal", "surface")} ${button("保存岗位", "save-job")}`
+  );
+}
+
+function renderDeleteJobModal() {
+  const job = jobs.find((item) => item.id === state.pendingDeleteJobId) || activeJob();
+  if (!job) {
+    return modalShell("删除岗位", emptyInline("当前没有可删除的岗位。"), `${button("关闭", "close-modal", "surface")}`);
+  }
+  const body = `
+    <section class="delete-confirm">
+      <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+      <div>
+        <h3>确认删除这个岗位？</h3>
+        <p>删除后，${escapeHtml(job.company)} · ${escapeHtml(job.title)} 的岗位信息、面试记录和 Offer 数据都会从当前 demo 数据中移除。</p>
+      </div>
+    </section>
+  `;
+  return modalShell(
+    "删除岗位",
+    body,
+    `${button("取消", "close-modal", "surface")} ${button("确认删除", "delete-job", "danger")}`
   );
 }
 
@@ -1186,21 +1925,28 @@ function renderInterviewModal() {
   const interviewIndex = editing ? Math.max(0, job.interviews.findIndex((item) => item.id === interview.id)) : job.interviews.length;
   const roundParts = splitRoundName(interview?.round, interviewIndex);
   const questions = interview?.questions?.length ? interview.questions : [{ q: "", a: "" }];
+  const addQaButton = `
+    <button class="section-action-button" type="button" data-action="add-interview-qa">
+      <span class="material-symbols-outlined" aria-hidden="true">add</span>
+      添加一组
+    </button>
+  `;
   const body = `
-    <form class="form-grid interview-form" id="interview-form">
-      ${roundField("roundName", "面试轮次", roundParts.label, roundParts.name, "例如 技术终面")}
-      ${dateTimeField("time", "面试时间", interview?.time || "", "选择面试时间")}
-      ${durationField("duration", "预计时长", interview?.duration || "", "60", "分钟")}
-      ${selectField("result", "面试状态", interviewResults, normalizeInterviewResult(interview?.result))}
-      <div class="field full qa-list-field">
-        <div class="qa-list-head">
-          <span>面试问题与回答</span>
-          ${button("添加一组", "add-interview-qa", "surface")}
+    <form class="form-grid job-edit-form interview-form" id="interview-form">
+      ${formSection("面试安排", "自动匹配当前轮次，补充面试名称、时间和结果。", "event_note", `
+        ${roundField("roundName", "面试轮次", roundParts.label, roundParts.name, "例如 技术终面")}
+        ${dateTimeField("time", "面试时间", interview?.time || "", "选择面试时间")}
+        ${durationField("duration", "预计时长", interview?.duration || "", "60", "分钟")}
+        ${selectField("result", "面试状态", interviewResults, normalizeInterviewResult(interview?.result))}
+      `)}
+      ${formSection("面试问题与回答", "每轮面试可记录多组问答，后续用于结构化复盘。", "forum", `
+        <div class="field full qa-list-field">
+          <span>问题组</span>
+          <div class="qa-list" data-qa-list>
+            ${questions.map((item, index) => interviewQuestionFields(index, item)).join("")}
+          </div>
         </div>
-        <div class="qa-list" data-qa-list>
-          ${questions.map((item, index) => interviewQuestionFields(index, item)).join("")}
-        </div>
-      </div>
+      `, addQaButton)}
     </form>
   `;
   return modalShell(editing ? "编辑面试记录" : "添加面试记录", body, `${button("取消", "close-modal", "surface")} ${button(editing ? "保存修改" : "保存面试", "save-interview")}`);
@@ -1309,15 +2055,19 @@ function renderOfferModal() {
   const job = activeJob();
   const offer = job.offer;
   const body = `
-    <form class="form-grid" id="offer-form">
-      ${field("totalComp", "年总包薪资", offer ? offer.totalComp : "", "例如 45w")}
-      ${field("location", "工作城市", offer ? offer.location : "", "例如 上海")}
-      ${field("workStyle", "工作模式", offer ? offer.workStyle : "", "现场 / 混合 / 远程")}
-      ${field("risk", "风险点", offer ? offer.risk : "", "例如 节奏较快，需要确认团队资源")}
-      ${selectField("growth", "成长空间", ["1", "2", "3", "4", "5"], offer ? String(offer.growth) : "4")}
-      ${selectField("stability", "稳定性", ["1", "2", "3", "4", "5"], offer ? String(offer.stability) : "4")}
-      ${selectField("balance", "工作生活平衡", ["1", "2", "3", "4", "5"], offer ? String(offer.balance) : "4")}
-      ${selectField("interest", "个人兴趣", ["1", "2", "3", "4", "5"], offer ? String(offer.interest) : "4")}
+    <form class="form-grid job-edit-form offer-edit-form" id="offer-form">
+      ${formSection("薪资与工作", "先记录 Offer 的核心条件，用于后续横向比较。", "payments", `
+        ${moneyField("totalComp", "年总包薪资", offer ? offer.totalComp : "", "45", "w")}
+        ${field("location", "工作城市", offer ? offer.location : "", "例如 上海")}
+        ${selectField("workStyle", "工作模式", workStyles, normalizeWorkStyle(offer ? offer.workStyle : "", job.city))}
+      `)}
+      ${formSection("评分与风险", "从成长、稳定性、生活节奏和个人兴趣四个维度打分。", "query_stats", `
+        ${selectField("growth", "成长空间", ["1", "2", "3", "4", "5"], offer ? String(offer.growth) : "4")}
+        ${selectField("stability", "稳定性", ["1", "2", "3", "4", "5"], offer ? String(offer.stability) : "4")}
+        ${selectField("balance", "工作生活平衡", ["1", "2", "3", "4", "5"], offer ? String(offer.balance) : "4")}
+        ${selectField("interest", "个人兴趣", ["1", "2", "3", "4", "5"], offer ? String(offer.interest) : "4")}
+        ${textareaField("risk", "风险点", offer ? offer.risk : "", "例如 节奏较快，需要确认团队资源")}
+      `)}
     </form>
   `;
   return modalShell(offer ? "编辑 Offer" : "添加 Offer", body, `${button("取消", "close-modal", "surface")} ${button("保存 Offer", "save-offer")}`);
@@ -1348,6 +2098,23 @@ function field(name, label, value, placeholder) {
   `;
 }
 
+function moneyField(name, label, value, placeholder, fallbackUnit = "k") {
+  const parts = parseMoneyParts(value, fallbackUnit);
+  const unitName = `${name}Unit`;
+  const amountName = `${name}Amount`;
+  const displayLabel = label.includes("RMB") ? label : `${label}（RMB）`;
+  return `
+    <label class="field money-field">
+      <span>${displayLabel}</span>
+      <span class="money-input-shell">
+        <input type="hidden" name="${name}" value="${escapeHtml(formatMoneyValue(parts.amount, parts.unit))}" data-money-value>
+        <input name="${amountName}" value="${escapeHtml(parts.amount)}" placeholder="${escapeHtml(placeholder)}" data-money-amount data-money-name="${name}" data-default-unit="${escapeHtml(fallbackUnit)}">
+        ${customSelect({ name: unitName, label: `${displayLabel}单位`, options: salaryUnits, value: parts.unit, className: "money-unit-select" })}
+      </span>
+    </label>
+  `;
+}
+
 function textareaField(name, label, value, placeholder) {
   return `
     <label class="field full">
@@ -1370,13 +2137,25 @@ function tagField(name, label, value) {
   return `
     <label class="field tag-field">
       <span>${label}</span>
-      <input name="${name}" value="${escapeHtml(value)}" placeholder="React，远程，高优先级" data-tag-input>
+      <input name="${name}" value="${escapeHtml(value)}" placeholder="React，远程，高" data-tag-input>
       <div class="tag-preview" data-tag-preview>${renderTagPreview(value)}</div>
     </label>
   `;
 }
 
 function setFormValue(form, name, value) {
+  const moneyValue = form.querySelector(`[data-money-value][name="${name}"]`);
+  if (moneyValue) {
+    const amount = form.querySelector(`[data-money-amount][data-money-name="${name}"]`);
+    const parts = parseMoneyParts(value, amount?.dataset.defaultUnit || "k");
+    moneyValue.value = formatMoneyValue(parts.amount, parts.unit);
+    if (amount) amount.value = parts.amount;
+    const unitField = form.elements[`${name}Unit`];
+    const unitSelect = unitField?.closest("[data-custom-select]");
+    if (unitSelect) setCustomSelectValue(unitSelect, parts.unit);
+    return;
+  }
+
   const field = form.elements[name];
   if (!field) return;
 
@@ -1402,7 +2181,7 @@ function jobRecognitionPresets() {
         city: "北京",
         salary: "35k - 50k",
         source: "截图识别",
-        priority: "P1",
+        priority: "高",
         status: "待投递",
         tags: "React，Next.js，核心架构组",
         description: "负责核心业务 Web 体验、性能优化、组件化建设和跨团队工程协作；要求熟悉 React 技术栈、前端工程化、性能治理和复杂业务落地。"
@@ -1416,7 +2195,7 @@ function jobRecognitionPresets() {
         city: "深圳",
         salary: "40k - 65k",
         source: "截图识别",
-        priority: "P1",
+        priority: "高",
         status: "待投递",
         tags: "平台产品，增长，用户体验",
         description: "负责平台产品规划、需求拆解、增长策略和跨团队推进；要求具备复杂业务抽象能力、数据分析能力和良好的协作推进经验。"
@@ -1430,7 +2209,7 @@ function jobRecognitionPresets() {
         city: "苏州",
         salary: "30k - 45k",
         source: "截图识别",
-        priority: "P2",
+        priority: "中",
         status: "待投递",
         tags: "Cloud，B2B，英文面试",
         description: "面向云产品客户场景，负责需求定义、路线图和跨区域团队协作；要求具备英文沟通、企业服务产品和数据驱动决策经验。"
@@ -1444,7 +2223,7 @@ function jobRecognitionPresets() {
         city: "上海",
         salary: "25k - 40k",
         source: "截图识别",
-        priority: "P2",
+        priority: "中",
         status: "待投递",
         tags: "设计系统，业务中台，体验优化",
         description: "负责业务工具体验设计、设计系统维护和跨端体验一致性；要求具备复杂信息架构、组件规范和业务协作能力。"
@@ -1458,7 +2237,7 @@ function jobRecognitionPresets() {
         city: "远程",
         salary: "USD 90k",
         source: "截图识别",
-        priority: "P3",
+        priority: "低",
         status: "待投递",
         tags: "Remote，Growth，Analytics",
         description: "负责增长数据分析、实验设计和商业洞察输出；要求具备 SQL、实验分析、指标体系搭建和英文跨团队沟通经验。"
@@ -1472,7 +2251,7 @@ function jobRecognitionPresets() {
         city: "杭州",
         salary: "30k - 55k",
         source: "截图识别",
-        priority: "P1",
+        priority: "高",
         status: "待投递",
         tags: "Java，分布式，高并发",
         description: "负责交易链路核心服务设计与性能优化；要求熟悉 Java、分布式系统、缓存、消息队列和高并发场景治理。"
@@ -1486,7 +2265,7 @@ function jobRecognitionPresets() {
         city: "上海",
         salary: "28k - 45k",
         source: "截图识别",
-        priority: "P2",
+        priority: "中",
         status: "待投递",
         tags: "社区，内容生态，用户增长",
         description: "负责社区内容生态和创作者体验优化；要求具备用户洞察、策略产品、数据分析和跨团队项目推进能力。"
@@ -1559,15 +2338,44 @@ function handleJobImageUpload(input) {
   const token = `${file.name}-${file.size}-${file.lastModified}`;
   handleJobImageUpload.token = token;
   handleJobImageUpload.timer = window.setTimeout(async () => {
-    const recognized = await inferJobPostingFromImage(file);
-    if (handleJobImageUpload.token !== token) return;
+    try {
+      let recognized = null;
+      if (isRemoteReady()) {
+        const formData = new FormData();
+        formData.append("image", file);
+        const response = await fetch("/api/jobs/recognize", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${state.auth.session.access_token}` },
+          body: formData
+        });
+        recognized = await readJsonResponse(response, "截图识别失败。");
+      } else {
+        recognized = await inferJobPostingFromImage(file);
+      }
+      if (handleJobImageUpload.token !== token) return;
 
-    Object.entries(recognized).forEach(([name, value]) => setFormValue(form, name, value));
-    section.classList.remove("is-loading");
-    section.classList.add("is-complete");
-    if (status) status.textContent = "已填入，可继续修改";
-    showToast("截图信息已填入表单");
-    renderToast();
+      Object.entries({
+        company: recognized.company,
+        title: recognized.title,
+        city: recognized.city,
+        salary: recognized.salary_display || formatMoneyValue(recognized.salary_amount, recognized.salary_unit || "k"),
+        source: recognized.source || "截图识别",
+        priority: normalizePriority(recognized.priority),
+        status: normalizeJobStatus(recognized.status),
+        tags: Array.isArray(recognized.tags) ? recognized.tags.join("，") : recognized.tags,
+        description: recognized.description
+      }).forEach(([name, value]) => setFormValue(form, name, value || ""));
+      section.classList.remove("is-loading");
+      section.classList.add("is-complete");
+      if (status) status.textContent = "已填入，可继续修改";
+      showToast(isRemoteReady() ? "AI 已识别岗位截图" : "截图信息已填入表单");
+      renderToast();
+    } catch (error) {
+      section.classList.remove("is-loading");
+      if (status) status.textContent = error instanceof Error ? error.message : "截图识别失败";
+      showToast("截图识别失败，请检查 AI 设置");
+      renderToast();
+    }
   }, 780);
 }
 
@@ -1575,8 +2383,90 @@ function readForm(id) {
   return Object.fromEntries(new FormData(document.getElementById(id)).entries());
 }
 
-function saveJob(editing = false) {
+async function handleLoginSubmit(signup = false) {
+  const data = readForm("login-form");
+  const email = String(data.email || "").trim();
+  const password = String(data.password || "");
+  if (!email || !password) {
+    state.modalError = "邮箱和密码都是必填项。";
+    render();
+    return;
+  }
+
+  try {
+    if (signup) {
+      await signUp(email, password);
+    } else {
+      await signIn(email, password);
+    }
+    state.modal = null;
+    state.modalError = "";
+    document.body.classList.remove("modal-open");
+    showToast(signup ? "账号已创建" : "登录成功");
+    render();
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "账号操作失败。";
+    render();
+  }
+}
+
+async function loadAiProvider() {
+  if (!isRemoteReady()) return null;
+  const response = await fetch("/api/me/ai-provider", { headers: { Authorization: `Bearer ${state.auth.session.access_token}` } });
+  const payload = await readJsonResponse(response, "读取 AI 设置失败。");
+  state.aiProvider = payload.provider || null;
+  return state.aiProvider;
+}
+
+async function saveAiProvider() {
+  const data = readForm("ai-settings-form");
+  const apiKey = String(data.apiKey || "").trim();
+  if (!state.aiProvider && !apiKey) {
+    state.modalError = "首次绑定必须填写 API Key。";
+    render();
+    return;
+  }
+  try {
+    const response = await fetch("/api/me/ai-provider", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${state.auth.session.access_token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        base_url: String(data.baseUrl || "").trim(),
+        model: String(data.model || "").trim(),
+        api_key: apiKey,
+        supports_vision: Boolean(data.supportsVision)
+      })
+    });
+    const payload = await readJsonResponse(response, "保存 AI 设置失败。");
+    state.aiProvider = payload.provider;
+    closeModal();
+    showToast("AI API 设置已保存");
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "保存 AI 设置失败。";
+    render();
+  }
+}
+
+async function testAiProvider() {
+  try {
+    const response = await fetch("/api/me/ai-provider/test", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
+    });
+    await readJsonResponse(response, "AI 连接测试失败。");
+    showToast("AI 连接测试通过");
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "AI 连接测试失败。";
+    render();
+  }
+}
+
+async function saveJob(editing = false) {
   const data = readForm("job-form");
+  const salary = formatMoneyValue(data.salaryAmount, data.salaryUnit || "k");
   if (!data.company.trim() || !data.title.trim()) {
     state.modalError = "公司名称和岗位名称是必填项。";
     render();
@@ -1589,26 +2479,33 @@ function saveJob(editing = false) {
       company: data.company.trim(),
       title: data.title.trim(),
       city: data.city.trim() || "未填写",
-      salary: data.salary.trim() || "面议",
-      status: data.status,
-      priority: data.priority,
+      salary,
+      status: normalizeJobStatus(data.status),
+      priority: normalizePriority(data.priority),
       source: data.source.trim() || "手动录入",
       tags: data.tags ? parseTags(data.tags) : job.tags,
       description: data.description.trim() || job.description,
       updated: "刚刚"
     });
     syncJobData(job);
+    try {
+      await updateRemoteJobFromDemo(job);
+    } catch (error) {
+      state.modalError = error instanceof Error ? error.message : "岗位同步失败。";
+      render();
+      return;
+    }
   } else {
     const id = `job-${Date.now()}`;
-    const newJob = {
+    let newJob = {
       id,
       company: data.company.trim(),
       title: data.title.trim(),
       city: data.city.trim() || "未填写",
-      salary: data.salary.trim() || "面议",
+      salary,
       source: data.source.trim() || "手动录入",
-      priority: data.priority,
-      status: data.status,
+      priority: normalizePriority(data.priority),
+      status: normalizeJobStatus(data.status),
       logo: data.company.trim().slice(0, 2).toUpperCase(),
       logoTone: "logo-yellow",
       updated: "刚刚",
@@ -1619,8 +2516,16 @@ function saveJob(editing = false) {
       aiSummary: null
     };
     syncJobData(newJob);
+    try {
+      newJob = await createRemoteJobFromDemo(newJob);
+      syncJobData(newJob);
+    } catch (error) {
+      state.modalError = error instanceof Error ? error.message : "岗位保存失败。";
+      render();
+      return;
+    }
     jobs.unshift(newJob);
-    state.activeJobId = id;
+    state.activeJobId = newJob.id;
     state.screen = "detail";
   }
 
@@ -1628,7 +2533,36 @@ function saveJob(editing = false) {
   showToast(editing ? "岗位信息已更新" : "岗位已添加，并进入详情页");
 }
 
-function saveInterview() {
+async function deletePendingJob() {
+  const jobId = state.pendingDeleteJobId || activeJob()?.id;
+  const job = jobs.find((item) => item.id === jobId);
+  if (!job) {
+    closeModal();
+    return;
+  }
+
+  const index = jobs.findIndex((item) => item.id === jobId);
+  try {
+    await deleteRemoteJobFromDemo(jobId);
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "删除同步失败。";
+    render();
+    return;
+  }
+  jobs.splice(index, 1);
+  state.offerSelection = state.offerSelection.filter((id) => id !== jobId);
+  state.activeJobId = jobs[Math.max(0, Math.min(index, jobs.length - 1))]?.id || "";
+  state.pendingDeleteJobId = "";
+  state.modal = null;
+  state.modalError = "";
+  state.activeInterviewId = null;
+  document.body.classList.remove("modal-open");
+  showToast("岗位已删除");
+  state.screen = "jobs";
+  render({ scrollTop: state.scrollPositions.jobs || 0 });
+}
+
+async function saveInterview() {
   const form = document.getElementById("interview-form");
   const formData = new FormData(form);
   const roundLabelValue = String(formData.get("roundLabel") || "").trim();
@@ -1665,13 +2599,21 @@ function saveInterview() {
   }
 
   job.updated = "刚刚";
+  try {
+    await saveRemoteInterviewFromDemo(job, nextInterview);
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "面试同步失败。";
+    render();
+    return;
+  }
   closeModal();
   showToast(existingIndex >= 0 ? "面试记录已更新" : "面试记录已保存");
 }
 
-function saveOffer() {
+async function saveOffer() {
   const data = readForm("offer-form");
-  if (!data.totalComp.trim()) {
+  const totalComp = formatMoneyValue(data.totalCompAmount, data.totalCompUnit || "w");
+  if (totalComp === "面议") {
     state.modalError = "年总包薪资是必填项，哪怕先写一个估算值也可以。";
     render();
     return;
@@ -1680,9 +2622,9 @@ function saveOffer() {
   const job = activeJob();
   job.offer = {
     location: data.location.trim() || job.city,
-    totalComp: data.totalComp.trim(),
-    cashWidth: Math.min(96, Math.max(42, Number.parseInt(data.totalComp, 10) || 68)),
-    workStyle: data.workStyle.trim() || "待确认",
+    totalComp,
+    cashWidth: Math.min(96, Math.max(42, moneyComparable(totalComp) || 68)),
+    workStyle: normalizeWorkStyle(data.workStyle, job.city),
     growth: Number(data.growth),
     stability: Number(data.stability),
     balance: Number(data.balance),
@@ -1693,6 +2635,13 @@ function saveOffer() {
   job.status = "已拿Offer";
   job.updated = "刚刚";
   syncJobData(job);
+  try {
+    await saveRemoteOfferFromDemo(job);
+  } catch (error) {
+    state.modalError = error instanceof Error ? error.message : "Offer 同步失败。";
+    render();
+    return;
+  }
   state.screen = "offers";
   closeModal();
   showToast("Offer 已加入对比");
@@ -1776,10 +2725,34 @@ function triggerOfferCelebration(company) {
   }, 1800);
 }
 
-function generateAiSummary() {
+async function generateAiSummary() {
   const job = activeJob();
   state.aiLoading = true;
   render();
+
+  if (isRemoteReady() && job.interviews[0]?.id) {
+    try {
+      const response = await fetch(`/api/interviews/${job.interviews[0].id}/ai-summary/generate`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${state.auth.session.access_token}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({ regenerate: false })
+      });
+      const payload = await readJsonResponse(response, "AI 总结失败。");
+      job.aiSummary = payload.summary;
+      state.aiLoading = false;
+      showToast("AI 总结已生成");
+      render();
+      return;
+    } catch (error) {
+      state.aiLoading = false;
+      showToast(error instanceof Error ? error.message : "AI 总结失败，请检查 AI 设置");
+      render();
+      return;
+    }
+  }
 
   window.setTimeout(() => {
     job.aiSummary = {
@@ -1856,7 +2829,7 @@ function applyCustomSelectValue(select, value) {
   if (select.hasAttribute("data-job-status-select")) {
     const job = jobs.find((item) => item.id === select.dataset.jobId);
     if (job) {
-      job.status = value;
+      job.status = normalizeJobStatus(value);
       job.updated = "刚刚";
       syncJobData(job);
       showToast("投递状态已更新");
@@ -1935,6 +2908,7 @@ function closeModal() {
   state.modal = null;
   state.modalError = "";
   state.activeInterviewId = null;
+  state.pendingDeleteJobId = "";
   document.body.classList.remove("modal-open");
   render();
 }
@@ -1995,6 +2969,23 @@ function syncTopbarState() {
 }
 
 function render(options = {}) {
+  if (state.booting) {
+    app.innerHTML = `
+      <main class="auth-gate">
+        <section class="card auth-card">
+          <div class="brand-name brand-logo" aria-label="GoOffer">
+            <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
+          </div>
+          <h1>正在进入 GoOffer...</h1>
+          <p>正在读取部署配置和登录状态。</p>
+        </section>
+      </main>
+    `;
+    modalRoot.innerHTML = "";
+    renderToast();
+    return;
+  }
+
   const screenMap = {
     dashboard: renderDashboard,
     jobs: renderJobs,
@@ -2008,6 +2999,8 @@ function render(options = {}) {
   syncSidebarState();
   syncTopbarState();
   state.jobSwitchDirection = "";
+  state.suppressFunnelMotion = false;
+  state.funnelTransition = "";
 
   if (typeof options.scrollTop === "number") {
     window.requestAnimationFrame(() => {
@@ -2028,13 +3021,31 @@ function render(options = {}) {
   }
 }
 
+function clearDragTargets() {
+  document.querySelectorAll(".drag-over").forEach((target) => target.classList.remove("drag-over"));
+  document.querySelectorAll(".is-dragging").forEach((target) => target.classList.remove("is-dragging"));
+}
+
+function moveJobToStatus(jobId, status) {
+  const job = jobs.find((item) => item.id === jobId);
+  if (!job || !statuses.includes(status)) return false;
+  if (job.status === status) return false;
+
+  job.status = status;
+  job.updated = "刚刚";
+  syncJobData(job);
+  return true;
+}
+
 document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
   const selectRoot = event.target.closest("[data-custom-select]");
   const dateTimeRoot = event.target.closest("[data-date-time-picker]");
   const accountRoot = event.target.closest(".sidebar-user, .account-popover");
+  const funnelRoot = event.target.closest(".funnel-controls, .funnel-standalone");
   const actionEl = event.target.closest("[data-action]");
   let closedAccount = false;
+  let closedFunnelPanel = false;
   if (!selectRoot) {
     closeCustomSelects();
   }
@@ -2045,8 +3056,13 @@ document.addEventListener("click", (event) => {
     state.accountOpen = false;
     closedAccount = true;
   }
+  if (state.funnelPanelOpen && !funnelRoot) {
+    state.funnelPanelOpen = false;
+    closedFunnelPanel = true;
+    state.suppressFunnelMotion = true;
+  }
   if (!actionEl) {
-    if (closedAccount) render();
+    if (closedAccount || closedFunnelPanel) render();
     return;
   }
 
@@ -2146,11 +3162,84 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "open-login") {
+    state.modal = "login";
+    state.modalError = "";
+    state.accountOpen = false;
+    render();
+    return;
+  }
+
+  if (action === "toggle-auth-mode") {
+    state.auth.mode = state.auth.mode === "signup" ? "signin" : "signup";
+    state.modalError = "";
+    render();
+    return;
+  }
+
+  if (action === "login") {
+    void handleLoginSubmit(false);
+    return;
+  }
+
+  if (action === "signup") {
+    void handleLoginSubmit(true);
+    return;
+  }
+
+  if (action === "logout") {
+    void signOut();
+    return;
+  }
+
+  if (action === "open-ai-settings") {
+    state.modal = "aiSettings";
+    state.modalError = "";
+    state.accountOpen = false;
+    void loadAiProvider().then(() => render()).catch((error) => {
+      state.modalError = error instanceof Error ? error.message : "读取 AI 设置失败。";
+      render();
+    });
+    render();
+    return;
+  }
+
+  if (action === "save-ai-provider") {
+    void saveAiProvider();
+    return;
+  }
+
+  if (action === "test-ai-provider") {
+    void testAiProvider();
+    return;
+  }
+
   if (action === "filter-jobs") {
     state.filters.status = actionEl.dataset.filterStatus || "全部";
     state.filters.city = "全部";
     state.filters.priority = "全部";
     state.filters.query = "";
+    state.funnelPanelOpen = false;
+    render();
+    return;
+  }
+
+  if (action === "toggle-funnel") {
+    const willOpen = !state.filters.funnel;
+    state.filters.funnel = !state.filters.funnel;
+    state.funnelTransition = willOpen ? "opening" : "closing";
+    state.funnelPanelOpen = false;
+    state.filters.status = "全部";
+    if (!state.filters.funnelStatuses.length) {
+      state.filters.funnelStatuses = [...defaultFunnelStatuses];
+    }
+    render();
+    return;
+  }
+
+  if (action === "toggle-funnel-panel") {
+    state.funnelPanelOpen = !state.funnelPanelOpen;
+    state.suppressFunnelMotion = true;
     render();
     return;
   }
@@ -2162,6 +3251,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "select-job") {
+    if (Date.now() - state.lastDragAt < 240) return;
     state.activeJobId = actionEl.dataset.jobId;
     navigateTo("detail");
     return;
@@ -2218,22 +3308,35 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-job") {
-    saveJob(false);
+    void saveJob(false);
     return;
   }
 
   if (action === "save-job-edit") {
-    saveJob(true);
+    void saveJob(true);
+    return;
+  }
+
+  if (action === "confirm-delete-job") {
+    state.pendingDeleteJobId = activeJob()?.id || "";
+    state.modal = "deleteJob";
+    state.modalError = "";
+    render();
+    return;
+  }
+
+  if (action === "delete-job") {
+    void deletePendingJob();
     return;
   }
 
   if (action === "save-interview") {
-    saveInterview();
+    void saveInterview();
     return;
   }
 
   if (action === "save-offer") {
-    saveOffer();
+    void saveOffer();
     return;
   }
 
@@ -2248,7 +3351,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "generate-ai") {
-    generateAiSummary();
+    void generateAiSummary();
     return;
   }
 
@@ -2262,6 +3365,19 @@ document.addEventListener("change", (event) => {
   const target = event.target;
   if (target.matches("[data-job-image-input]")) {
     handleJobImageUpload(target);
+  }
+
+  if (target.matches("[data-funnel-status-toggle]")) {
+    const value = target.value;
+    const selected = new Set(state.filters.funnelStatuses);
+    if (target.checked) {
+      selected.add(value);
+    } else {
+      selected.delete(value);
+    }
+    state.filters.funnelStatuses = statuses.filter((status) => selected.has(status));
+    render();
+    return;
   }
 
   if (target.matches("[data-date-part], [data-time-part]")) {
@@ -2289,6 +3405,54 @@ document.addEventListener("input", (event) => {
   if (event.target.matches("[data-tag-input]")) {
     updateTagPreview(event.target);
   }
+});
+
+document.addEventListener("dragstart", (event) => {
+  const dragCard = event.target.closest("[data-drag-job-id]");
+  if (!dragCard) return;
+
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", dragCard.dataset.dragJobId);
+  dragCard.classList.add("is-dragging");
+});
+
+document.addEventListener("dragover", (event) => {
+  const dropTarget = event.target.closest("[data-funnel-drop-status]");
+  if (!dropTarget) return;
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  document.querySelectorAll(".drag-over").forEach((target) => {
+    if (target !== dropTarget) target.classList.remove("drag-over");
+  });
+  dropTarget.classList.add("drag-over");
+});
+
+document.addEventListener("dragleave", (event) => {
+  const dropTarget = event.target.closest("[data-funnel-drop-status]");
+  if (!dropTarget || dropTarget.contains(event.relatedTarget)) return;
+  dropTarget.classList.remove("drag-over");
+});
+
+document.addEventListener("drop", (event) => {
+  const dropTarget = event.target.closest("[data-funnel-drop-status]");
+  if (!dropTarget) return;
+
+  event.preventDefault();
+  const jobId = event.dataTransfer.getData("text/plain");
+  const status = dropTarget.dataset.funnelDropStatus;
+  clearDragTargets();
+  state.lastDragAt = Date.now();
+
+  if (moveJobToStatus(jobId, status)) {
+    showToast(`已移动到${statusMeta[status]?.title || status}`);
+    render();
+  }
+});
+
+document.addEventListener("dragend", () => {
+  state.lastDragAt = Date.now();
+  clearDragTargets();
 });
 
 document.addEventListener("keydown", (event) => {
@@ -2325,4 +3489,24 @@ document.addEventListener("keydown", (event) => {
 
 window.addEventListener("scroll", syncTopbarState, { passive: true });
 
+async function initApp() {
+  try {
+    await loadRuntimeConfig();
+    restoreSession();
+    if (isRemoteReady()) {
+      await loadRemoteWorkspace();
+      await loadAiProvider().catch(() => null);
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "初始化失败，已进入 demo 模式");
+  } finally {
+    state.booting = false;
+    if (!state.auth.configured) {
+      showToast("Supabase 未配置，当前为本地 demo 模式");
+    }
+    render();
+  }
+}
+
 render();
+void initApp();
