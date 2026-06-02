@@ -1787,7 +1787,8 @@ function renderModal() {
     offerSelect: renderOfferSelectModal,
     deleteJob: renderDeleteJobModal,
     login: renderLoginModal,
-    aiSettings: renderAiSettingsModal
+    aiSettings: renderAiSettingsModal,
+    aiHelp: renderAiHelpModal
   };
   return map[state.modal] ? map[state.modal]() : "";
 }
@@ -1835,15 +1836,14 @@ function renderAiSettingsModal() {
   const provider = state.aiProvider;
   const body = `
     <form class="form-grid job-edit-form" id="ai-settings-form">
-      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，只用于你的截图识别和面试总结。", "auto_awesome", `
+      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，只用于 AI 面试总结；岗位截图识别已改为本地 OCR，不再消耗你的 API。", "auto_awesome", `
         ${field("baseUrl", "Base URL", provider?.base_url || "https://api.openai.com/v1", "https://api.openai.com/v1")}
         ${field("model", "模型", provider?.model || "gpt-4o-mini", "gpt-4o-mini")}
         ${field("apiKey", "API Key", "", provider?.api_key_hint || "sk-...")}
-        <label class="checkbox-row">
-          <input type="checkbox" name="supportsVision" ${provider?.supports_vision === false ? "" : "checked"}>
-          <span>这个模型支持图片识别</span>
-        </label>
-      `)}
+      `, `<button class="section-action-button" type="button" data-action="open-ai-help">
+        <span class="material-symbols-outlined" aria-hidden="true">help</span>
+        如何获取
+      </button>`)}
       ${provider ? `<div class="empty-dash">当前已绑定：${escapeHtml(provider.model)} · ${escapeHtml(provider.api_key_hint || "")}</div>` : ""}
     </form>
   `;
@@ -1852,6 +1852,30 @@ function renderAiSettingsModal() {
     body,
     `${button("取消", "close-modal", "surface")} ${provider ? button("测试连接", "test-ai-provider", "surface") : ""} ${button("保存设置", "save-ai-provider")}`
   );
+}
+
+function renderAiHelpModal() {
+  const body = `
+    <section class="help-copy">
+      <h3>Base URL 填什么？</h3>
+      <p>如果使用 OpenAI 官方 API，Base URL 填：</p>
+      <pre>https://api.openai.com/v1</pre>
+      <p>如果使用兼容 OpenAI 格式的服务商，填写服务商文档里的 OpenAI-compatible Base URL，例如以 <code>/v1</code> 结尾的地址。</p>
+
+      <h3>模型填什么？</h3>
+      <p>填写你的 API Key 有权限调用的模型名。OpenAI 官方推荐先用：</p>
+      <pre>gpt-4o-mini</pre>
+      <p>如果你使用其他服务商，请填它控制台或文档中给出的模型 ID。</p>
+
+      <h3>API Key 在哪里获取？</h3>
+      <p>OpenAI 官方路径：进入 OpenAI Platform，打开 API Keys 页面，点击 Create new secret key，复制以 <code>sk-</code> 开头的密钥。</p>
+      <p>保存后密钥只会显示一次，请立刻复制。GoOffer 会加密保存，只用于你的 AI 面试总结。</p>
+
+      <h3>截图识别还需要 API Key 吗？</h3>
+      <p>不需要。岗位截图识别使用浏览器本地 OCR 和规则抽取，不调用你的 API，也不消耗大模型额度。</p>
+    </section>
+  `;
+  return modalShell("如何获取 API 设置", body, `${button("返回设置", "open-ai-settings", "surface")} ${button("关闭", "close-modal")}`);
 }
 
 function renderJobModal() {
@@ -2175,138 +2199,129 @@ function setFormValue(form, name, value) {
   }
 }
 
-function jobRecognitionPresets() {
-  return [
-    {
-      keys: ["bytedance", "byte", "字节", "抖音", "douyin", "frontend", "前端", "react"],
-      data: {
-        company: "ByteDance",
-        title: "高级前端开发工程师",
-        city: "北京",
-        salary: "35k - 50k",
-        source: "截图识别",
-        priority: "高",
-        status: "待投递",
-        tags: "React，Next.js，核心架构组",
-        description: "负责核心业务 Web 体验、性能优化、组件化建设和跨团队工程协作；要求熟悉 React 技术栈、前端工程化、性能治理和复杂业务落地。"
-      }
-    },
-    {
-      keys: ["tencent", "腾讯", "product", "pm"],
-      data: {
-        company: "腾讯",
-        title: "资深产品经理",
-        city: "深圳",
-        salary: "40k - 65k",
-        source: "截图识别",
-        priority: "高",
-        status: "待投递",
-        tags: "平台产品，增长，用户体验",
-        description: "负责平台产品规划、需求拆解、增长策略和跨团队推进；要求具备复杂业务抽象能力、数据分析能力和良好的协作推进经验。"
-      }
-    },
-    {
-      keys: ["microsoft", "微软", "cloud"],
-      data: {
-        company: "微软",
-        title: "Cloud PM",
-        city: "苏州",
-        salary: "30k - 45k",
-        source: "截图识别",
-        priority: "中",
-        status: "待投递",
-        tags: "Cloud，B2B，英文面试",
-        description: "面向云产品客户场景，负责需求定义、路线图和跨区域团队协作；要求具备英文沟通、企业服务产品和数据驱动决策经验。"
-      }
-    },
-    {
-      keys: ["design", "ui", "美团", "designer"],
-      data: {
-        company: "美团",
-        title: "UI 设计师",
-        city: "上海",
-        salary: "25k - 40k",
-        source: "截图识别",
-        priority: "中",
-        status: "待投递",
-        tags: "设计系统，业务中台，体验优化",
-        description: "负责业务工具体验设计、设计系统维护和跨端体验一致性；要求具备复杂信息架构、组件规范和业务协作能力。"
-      }
-    },
-    {
-      keys: ["shopify", "growth", "analyst", "remote", "增长", "分析"],
-      data: {
-        company: "Shopify",
-        title: "Growth Analyst",
-        city: "远程",
-        salary: "USD 90k",
-        source: "截图识别",
-        priority: "低",
-        status: "待投递",
-        tags: "Remote，Growth，Analytics",
-        description: "负责增长数据分析、实验设计和商业洞察输出；要求具备 SQL、实验分析、指标体系搭建和英文跨团队沟通经验。"
-      }
-    },
-    {
-      keys: ["alibaba", "阿里", "淘天", "java", "backend", "后端"],
-      data: {
-        company: "阿里巴巴",
-        title: "后端开发工程师",
-        city: "杭州",
-        salary: "30k - 55k",
-        source: "截图识别",
-        priority: "高",
-        status: "待投递",
-        tags: "Java，分布式，高并发",
-        description: "负责交易链路核心服务设计与性能优化；要求熟悉 Java、分布式系统、缓存、消息队列和高并发场景治理。"
-      }
-    },
-    {
-      keys: ["xiaohongshu", "小红书", "content", "社区", "内容"],
-      data: {
-        company: "小红书",
-        title: "社区产品经理",
-        city: "上海",
-        salary: "28k - 45k",
-        source: "截图识别",
-        priority: "中",
-        status: "待投递",
-        tags: "社区，内容生态，用户增长",
-        description: "负责社区内容生态和创作者体验优化；要求具备用户洞察、策略产品、数据分析和跨团队项目推进能力。"
-      }
-    }
+function normalizeOcrLine(value) {
+  return String(value || "")
+    .replace(/[|｜]/g, " ")
+    .replace(/[，,]/g, "，")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractByLabel(lines, labels) {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const matched = labels.find((label) => line.includes(label));
+    if (!matched) continue;
+    const inline = line.split(new RegExp(`${matched}\\s*[:：]?`))[1]?.trim();
+    if (inline && inline.length > 1) return inline;
+    const next = lines[index + 1];
+    if (next && !labels.some((label) => next.includes(label))) return next.trim();
+  }
+  return "";
+}
+
+function detectSalary(text) {
+  const matched = text.match(/(?:RMB|CNY|¥|￥)?\s*(\d+(?:\.\d+)?(?:\s*(?:-|~|—|–|至|到)\s*\d+(?:\.\d+)?)?)\s*(k|K|w|W|万|万\/年|千|千\/月|千\/月|k\/月|K\/月)/);
+  if (!matched) return { amount: "", unit: "k", display: "" };
+  const unit = /w|W|万/.test(matched[2]) ? "w" : "k";
+  const amount = matched[1].replace(/\s*(?:~|—|–|至|到|-)\s*/g, " - ").trim();
+  return { amount, unit, display: formatMoneyValue(amount, unit) };
+}
+
+function detectCity(text) {
+  const cities = ["北京", "上海", "深圳", "广州", "杭州", "成都", "南京", "苏州", "武汉", "西安", "厦门", "长沙", "重庆", "天津", "合肥", "远程"];
+  return cities.find((city) => text.includes(city)) || "";
+}
+
+function detectTags(text) {
+  const tags = [];
+  const rules = [
+    ["React", /react/i],
+    ["Vue", /vue/i],
+    ["Node.js", /node/i],
+    ["TypeScript", /typescript|ts\b/i],
+    ["AI", /ai|人工智能|大模型|llm/i],
+    ["数据", /数据|data/i],
+    ["产品", /产品|pm\b/i],
+    ["设计", /设计|ui|ux/i],
+    ["远程", /远程|remote/i],
+    ["实习", /实习|intern/i]
   ];
+  rules.forEach(([tag, pattern]) => {
+    if (pattern.test(text)) tags.push(tag);
+  });
+  return tags.length ? tags : ["截图识别"];
 }
 
-async function fileFingerprint(file) {
-  let hash = 2166136261;
-  const seed = `${file.name}|${file.type}|${file.size}|${file.lastModified}`;
+function looksLikeTitle(line) {
+  return /工程师|开发|前端|后端|全栈|算法|测试|产品|经理|运营|设计|分析师|架构|实习|研发|顾问|专家|负责人/i.test(line);
+}
 
-  for (const char of seed) {
-    hash ^= char.charCodeAt(0);
-    hash = Math.imul(hash, 16777619) >>> 0;
-  }
+function looksLikeCompany(line) {
+  return /公司|科技|集团|有限|inc\.?|ltd\.?|corp\.?|字节|腾讯|阿里|百度|美团|微软|快手|小红书|京东|网易/i.test(line);
+}
 
-  if (file.arrayBuffer) {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const stride = Math.max(1, Math.floor(bytes.length / 192));
-    for (let index = 0; index < bytes.length; index += stride) {
-      hash ^= bytes[index];
-      hash = Math.imul(hash, 16777619) >>> 0;
+function extractJobPostingFromText(text) {
+  const lines = text.split(/\r?\n/).map(normalizeOcrLine).filter((line) => line.length > 1);
+  const compactText = lines.join("\n");
+  const salary = detectSalary(compactText);
+  const labeledCompany = extractByLabel(lines, ["公司名称", "公司", "企业", "雇主"]);
+  const labeledTitle = extractByLabel(lines, ["岗位名称", "职位名称", "岗位", "职位", "招聘职位"]);
+  const companyLine = lines.find((line) => looksLikeCompany(line) && !looksLikeTitle(line));
+  const titleLine = lines.find((line) => looksLikeTitle(line) && !/职责|要求|描述/.test(line));
+  const city = detectCity(compactText);
+  const descriptionLines = lines
+    .filter((line) => !line.includes(salary.amount))
+    .filter((line) => line !== labeledCompany && line !== labeledTitle)
+    .slice(0, 8);
+
+  return {
+    company: (labeledCompany || companyLine || "").slice(0, 48),
+    title: (labeledTitle || titleLine || "").slice(0, 60),
+    city,
+    salary_amount: salary.amount,
+    salary_unit: salary.unit,
+    salary_display: salary.display,
+    source: "本地 OCR",
+    priority: "中",
+    status: "待投递",
+    tags: detectTags(compactText),
+    description: descriptionLines.join("\n").slice(0, 900),
+    confidence: text.length > 20 ? 0.76 : 0.35
+  };
+}
+
+function loadTesseract() {
+  if (window.Tesseract) return Promise.resolve(window.Tesseract);
+  if (loadTesseract.promise) return loadTesseract.promise;
+  loadTesseract.promise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+    script.onload = () => resolve(window.Tesseract);
+    script.onerror = () => reject(new Error("OCR 引擎加载失败。"));
+    document.head.appendChild(script);
+  });
+  return loadTesseract.promise;
+}
+
+async function recognizeJobPostingWithLocalOcr(file, onProgress) {
+  const Tesseract = await loadTesseract();
+  const result = await Tesseract.recognize(file, "chi_sim+eng", {
+    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
+    corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js",
+    langPath: "https://tessdata.projectnaptha.com/4.0.0",
+    logger: (event) => {
+      if (event.status === "recognizing text" && typeof onProgress === "function") {
+        onProgress(Math.round((event.progress || 0) * 100));
+      }
     }
+  });
+  const text = result?.data?.text || "";
+  const extracted = extractJobPostingFromText(text);
+  if (!extracted.company && !extracted.title && !extracted.salary_amount) {
+    throw new Error("OCR 未识别出足够的岗位信息，请换一张更清晰的截图或手动填写。");
   }
-
-  return hash >>> 0;
-}
-
-async function inferJobPostingFromImage(file) {
-  const normalized = file.name.toLowerCase();
-  const presets = jobRecognitionPresets();
-  const matched = presets.find((preset) => preset.keys.some((key) => normalized.includes(key.toLowerCase())));
-  if (matched) return matched.data;
-
-  const fingerprint = await fileFingerprint(file);
-  return presets[fingerprint % presets.length].data;
+  return extracted;
 }
 
 function handleJobImageUpload(input) {
@@ -2321,7 +2336,7 @@ function handleJobImageUpload(input) {
 
   section.classList.remove("is-complete");
   section.classList.add("is-loading");
-  if (status) status.textContent = "正在识别并填入表单...";
+  if (status) status.textContent = "正在本地 OCR 识别...";
 
   if (preview) {
     preview.innerHTML = "";
@@ -2343,19 +2358,9 @@ function handleJobImageUpload(input) {
   handleJobImageUpload.token = token;
   handleJobImageUpload.timer = window.setTimeout(async () => {
     try {
-      let recognized = null;
-      if (isRemoteReady()) {
-        const formData = new FormData();
-        formData.append("image", file);
-        const response = await fetch("/api/jobs/recognize", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${state.auth.session.access_token}` },
-          body: formData
-        });
-        recognized = await readJsonResponse(response, "截图识别失败。");
-      } else {
-        recognized = await inferJobPostingFromImage(file);
-      }
+      const recognized = await recognizeJobPostingWithLocalOcr(file, (progress) => {
+        if (status) status.textContent = `正在本地 OCR 识别...${progress}%`;
+      });
       if (handleJobImageUpload.token !== token) return;
 
       Object.entries({
@@ -2372,12 +2377,12 @@ function handleJobImageUpload(input) {
       section.classList.remove("is-loading");
       section.classList.add("is-complete");
       if (status) status.textContent = "已填入，可继续修改";
-      showToast(isRemoteReady() ? "AI 已识别岗位截图" : "截图信息已填入表单");
+      showToast("本地 OCR 已填入岗位信息");
       renderToast();
     } catch (error) {
       section.classList.remove("is-loading");
       if (status) status.textContent = error instanceof Error ? error.message : "截图识别失败";
-      showToast("截图识别失败，请检查 AI 设置");
+      showToast("OCR 识别失败，请换清晰截图或手动填写");
       renderToast();
     }
   }, 780);
@@ -3204,6 +3209,13 @@ document.addEventListener("click", (event) => {
       state.modalError = error instanceof Error ? error.message : "读取 AI 设置失败。";
       render();
     });
+    render();
+    return;
+  }
+
+  if (action === "open-ai-help") {
+    state.modal = "aiHelp";
+    state.modalError = "";
     render();
     return;
   }

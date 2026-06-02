@@ -488,6 +488,41 @@ small {
   font-size: 20px;
 }
 
+.help-copy {
+  display: grid;
+  gap: 12px;
+  color: var(--on-surface);
+}
+
+.help-copy h3 {
+  margin: 8px 0 0;
+  font-size: 18px;
+}
+
+.help-copy p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-weight: 650;
+}
+
+.help-copy pre,
+.help-copy code {
+  border-radius: var(--radius-sm);
+  background: var(--surface-low);
+  color: var(--on-surface);
+}
+
+.help-copy pre {
+  overflow: auto;
+  margin: 0;
+  padding: 12px 14px;
+  font-weight: 800;
+}
+
+.help-copy code {
+  padding: 2px 6px;
+}
+
 .avatar,
 .logo-tile {
   display: inline-flex;
