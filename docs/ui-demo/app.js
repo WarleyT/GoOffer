@@ -342,6 +342,9 @@ function currentUserInitials() {
 async function readJsonResponse(response, fallbackMessage) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401 && state.auth.session) {
+      expireLocalSession("登录状态已失效，已自动退出。");
+    }
     throw new Error(payload?.error?.message || payload?.message || payload?.msg || fallbackMessage);
   }
   return payload;
@@ -376,6 +379,14 @@ function saveSession(session) {
   }
 }
 
+function expireLocalSession(message = "登录状态已失效，已自动退出。") {
+  saveSession(null);
+  state.accountOpen = false;
+  state.aiProvider = null;
+  showToast(message);
+  if (!state.booting) render();
+}
+
 function restoreSession() {
   try {
     const raw = localStorage.getItem(authStorageKey);
@@ -383,6 +394,38 @@ function restoreSession() {
     saveSession(JSON.parse(raw));
   } catch {
     saveSession(null);
+  }
+}
+
+function sessionExpiresSoon(session = state.auth.session) {
+  if (!session?.access_token) return false;
+  const expiresAt = Number(session.expires_at || 0);
+  if (!expiresAt) return false;
+  return expiresAt * 1000 - Date.now() < 60_000;
+}
+
+async function refreshSessionIfNeeded({ force = false } = {}) {
+  const session = state.auth.session;
+  if (!session?.access_token || !state.auth.configured) return false;
+  if (!session.refresh_token) return true;
+  if (!force && !sessionExpiresSoon(session)) return true;
+
+  try {
+    const response = await fetch(`${state.auth.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.access_token) {
+      expireLocalSession();
+      return false;
+    }
+    saveSession(payload);
+    return true;
+  } catch {
+    showToast("登录续期失败，请检查网络后刷新。");
+    return false;
   }
 }
 
@@ -443,6 +486,9 @@ function isRemoteReady() {
 }
 
 async function supabaseTable(path, options = {}) {
+  if (!(await refreshSessionIfNeeded())) {
+    throw new Error("登录状态已失效，已自动退出。");
+  }
   const response = await fetch(`${state.auth.url}/rest/v1/${path}`, {
     ...options,
     headers: {
@@ -523,6 +569,7 @@ function mapRemoteSummary(row) {
 
 async function loadRemoteWorkspace() {
   if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
   const payload = await fetch("/api/jobs", {
     headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
   }).then((response) => readJsonResponse(response, "读取岗位失败。"));
@@ -565,6 +612,7 @@ async function loadRemoteWorkspace() {
 
 async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
+  if (!(await refreshSessionIfNeeded())) return job;
   const salary = parseMoneyParts(job.salary, "k");
   const payload = await fetch("/api/jobs", {
     method: "POST",
@@ -593,6 +641,7 @@ async function createRemoteJobFromDemo(job) {
 
 async function updateRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
   const salary = parseMoneyParts(job.salary, "k");
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
     method: "PATCH",
@@ -614,11 +663,13 @@ async function updateRemoteJobFromDemo(job) {
 
 async function deleteRemoteJobFromDemo(jobId) {
   if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, { method: "DELETE" });
 }
 
 async function saveRemoteInterviewFromDemo(job, interview) {
   if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
   const roundParts = splitRoundName(interview.round, job.interviews.indexOf(interview));
   const rows = await supabaseTable("interviews?select=id", {
     method: "POST",
@@ -650,6 +701,7 @@ async function saveRemoteInterviewFromDemo(job, interview) {
 
 async function saveRemoteOfferFromDemo(job) {
   if (!isRemoteReady() || !job.offer) return;
+  if (!(await refreshSessionIfNeeded())) return;
   const total = parseMoneyParts(job.offer.totalComp, "w");
   await supabaseTable("offers", {
     method: "POST",
@@ -2527,6 +2579,9 @@ async function recognizeRemoteJobImage(file) {
   if (!isRemoteReady()) {
     throw new Error("AI 识图需要先登录账号。");
   }
+  if (!(await refreshSessionIfNeeded())) {
+    throw new Error("登录状态已失效，已自动退出。");
+  }
   const provider = state.aiProvider || await loadAiProvider();
   if (!provider) {
     throw new Error("请先在 AI API 设置中绑定模型。");
@@ -2633,6 +2688,7 @@ async function handleLoginSubmit(signup = false) {
 
 async function loadAiProvider() {
   if (!isRemoteReady()) return null;
+  if (!(await refreshSessionIfNeeded())) return null;
   const response = await fetch("/api/me/ai-provider", { headers: { Authorization: `Bearer ${state.auth.session.access_token}` } });
   const payload = await readJsonResponse(response, "读取 AI 设置失败。");
   state.aiProvider = payload.provider || null;
@@ -2648,6 +2704,9 @@ async function saveAiProvider() {
     return;
   }
   try {
+    if (!(await refreshSessionIfNeeded())) {
+      throw new Error("登录状态已失效，已自动退出。");
+    }
     const response = await fetch("/api/me/ai-provider", {
       method: "PUT",
       headers: {
@@ -2673,6 +2732,9 @@ async function saveAiProvider() {
 
 async function testAiProvider() {
   try {
+    if (!(await refreshSessionIfNeeded())) {
+      throw new Error("登录状态已失效，已自动退出。");
+    }
     const response = await fetch("/api/me/ai-provider/test", {
       method: "POST",
       headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
@@ -2965,6 +3027,9 @@ async function generateAiSummary() {
 
   if (isRemoteReady() && job.interviews[0]?.id) {
     try {
+      if (!(await refreshSessionIfNeeded())) {
+        throw new Error("登录状态已失效，已自动退出。");
+      }
       const response = await fetch(`/api/interviews/${job.interviews[0].id}/ai-summary/generate`, {
         method: "POST",
         headers: {
@@ -3749,8 +3814,11 @@ async function initApp() {
     await loadRuntimeConfig();
     restoreSession();
     if (isRemoteReady()) {
-      await loadRemoteWorkspace();
-      await loadAiProvider().catch(() => null);
+      const sessionReady = await refreshSessionIfNeeded({ force: sessionExpiresSoon() });
+      if (sessionReady) {
+        await loadRemoteWorkspace();
+        await loadAiProvider().catch(() => null);
+      }
     }
   } catch (error) {
     showToast(error instanceof Error ? error.message : "初始化失败，已进入 demo 模式");

@@ -3549,8 +3549,8 @@ body.is-scrolled .topbar-subtitle {
 
 .toast {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 80;
   max-width: min(360px, calc(100vw - 32px));
   padding: 14px 18px;
@@ -3559,6 +3559,8 @@ body.is-scrolled .topbar-subtitle {
   color: var(--inverse-on-surface);
   box-shadow: var(--shadow-popover);
   font-weight: 800;
+  text-align: center;
+  transform: translateX(-50%);
 }
 
 .celebration-layer {
