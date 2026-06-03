@@ -1326,6 +1326,125 @@ body.is-scrolled .topbar-subtitle {
   grid-column: 1 / -1;
 }
 
+@media (min-width: 1181px) {
+  .screen-dashboard .content {
+    min-height: calc(100dvh - 98px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .screen-dashboard .bento-grid {
+    min-height: clamp(620px, calc(100dvh - 250px), 900px);
+    grid-template-rows: minmax(340px, 1.35fr) minmax(190px, 0.8fr);
+    align-items: stretch;
+  }
+
+  .screen-dashboard .dashboard-funnel-card,
+  .screen-dashboard .dashboard-interview-card,
+  .screen-dashboard .dashboard-review-card {
+    height: 100%;
+  }
+
+  .screen-dashboard .dashboard-funnel-card {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .screen-dashboard .mini-funnel {
+    height: 100%;
+  }
+
+  .screen-dashboard .mini-funnel-step {
+    min-height: 0;
+    height: 100%;
+  }
+
+  .screen-dashboard .mini-funnel-jobs {
+    max-height: none;
+  }
+
+  .screen-dashboard .dashboard-interview-card {
+    min-height: 0;
+    align-content: stretch;
+  }
+
+  .screen-dashboard .dashboard-interview-list {
+    max-height: none;
+  }
+
+  .screen-dashboard .dashboard-review-card {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .screen-dashboard .dashboard-review-body {
+    align-self: stretch;
+    align-items: center;
+  }
+
+  .screen-detail .content,
+  .screen-offers .content {
+    min-height: calc(100dvh - 98px);
+  }
+
+  .screen-detail .detail-layout {
+    min-height: clamp(620px, calc(100dvh - 160px), 940px);
+    align-items: stretch;
+  }
+
+  .screen-detail .detail-layout > div,
+  .screen-detail .side-stack {
+    min-height: 0;
+    display: grid;
+  }
+
+  .screen-detail .detail-layout > div {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .screen-detail .hero-card {
+    min-height: clamp(220px, 24vh, 340px);
+  }
+
+  .screen-detail .detail-layout > div > .stack {
+    align-content: start;
+    min-height: 0;
+  }
+
+  .screen-detail .side-stack {
+    grid-auto-rows: minmax(0, auto);
+  }
+
+  .screen-detail .quick-info,
+  .screen-detail .ai-card {
+    min-height: clamp(190px, 22vh, 320px);
+  }
+
+  .screen-offers .content {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .screen-offers .offers-grid {
+    min-height: clamp(560px, calc(100dvh - 330px), 860px);
+    align-items: stretch;
+  }
+
+  .screen-offers .offer-card,
+  .screen-offers .offers-grid .add-card {
+    height: 100%;
+  }
+
+  .screen-offers .decision-grid {
+    min-height: clamp(190px, 22vh, 300px);
+  }
+
+  .screen-offers .decision-card {
+    height: 100%;
+  }
+}
+
 .section-head {
   display: flex;
   align-items: center;
