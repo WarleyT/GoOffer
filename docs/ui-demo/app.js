@@ -12,7 +12,7 @@ const statusOrder = new Map(statuses.map((status, index) => [status, index]));
 const defaultFunnelStatuses = ["已投递", "面试中", "已拿Offer", "被拒绝"];
 const priorities = ["高", "中", "低"];
 const priorityOrder = new Map(priorities.map((priority, index) => [priority, index]));
-const salaryUnits = ["k", "w"];
+const salaryUnits = ["", "k", "w"];
 const workStyles = ["线下", "远程", "出差"];
 
 const statusMeta = {
@@ -327,6 +327,7 @@ const app = document.getElementById("app");
 const modalRoot = document.getElementById("modal-root");
 const toastRoot = document.getElementById("toast-root");
 let topbarCollapsed = false;
+let modalPointerStartedOnBackdrop = false;
 const authStorageKey = "gooffer.supabase.session";
 
 function currentUserEmail() {
@@ -901,7 +902,8 @@ function customSelect({ name = "", id = "", label = "", options = [], value = ""
   const prefix = displayPrefix ? `data-display-prefix="${escapeHtml(displayPrefix)}"` : "";
   const inputName = name ? `name="${escapeHtml(name)}"` : "";
   const inputId = id ? `id="${escapeHtml(id)}"` : "";
-  const display = displayPrefix ? `${displayPrefix}：${current}` : current;
+  const displayValue = current === "" ? "空" : current;
+  const display = displayPrefix ? `${displayPrefix}：${displayValue}` : displayValue;
 
   return `
     <span class="custom-select select-shell ${className}" data-custom-select ${selectId} ${prefix} ${attrs}>
@@ -913,7 +915,7 @@ function customSelect({ name = "", id = "", label = "", options = [], value = ""
       <span class="custom-select-menu" role="listbox">
         ${normalizedOptions.map((option) => `
           <button class="custom-select-option${option === current ? " active" : ""}" type="button" data-action="choose-select" data-value="${escapeHtml(option)}" role="option" aria-selected="${option === current ? "true" : "false"}">
-            ${escapeHtml(option)}
+            ${escapeHtml(option === "" ? "空" : option)}
           </button>
         `).join("")}
       </span>
@@ -1189,6 +1191,7 @@ function renderDashboardFunnel() {
                   <span>
                     <strong>${escapeHtml(job.company)}</strong>
                     <small>${escapeHtml(job.title)}</small>
+                    <em>${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</em>
                   </span>
                 </button>
               `).join("")}
@@ -1871,7 +1874,7 @@ function renderModal() {
 
 function modalShell(title, body, footer) {
   return `
-    <div class="modal-backdrop" role="presentation" data-action="close-modal">
+    <div class="modal-backdrop" role="presentation" data-modal-backdrop>
       <section class="modal ${state.modal ? `modal-${state.modal}` : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel>
         <header class="modal-header">
           <div>
@@ -2749,7 +2752,7 @@ async function testAiProvider() {
 
 async function saveJob(editing = false) {
   const data = readForm("job-form");
-  const salary = formatMoneyValue(data.salaryAmount, data.salaryUnit || "k");
+  const salary = formatMoneyValue(data.salaryAmount, data.salaryUnit ?? "k");
   if (!data.company.trim() || !data.title.trim()) {
     state.modalError = "公司名称和岗位名称是必填项。";
     render();
@@ -2895,7 +2898,7 @@ async function saveInterview() {
 
 async function saveOffer() {
   const data = readForm("offer-form");
-  const totalComp = formatMoneyValue(data.totalCompAmount, data.totalCompUnit || "w");
+  const totalComp = formatMoneyValue(data.totalCompAmount, data.totalCompUnit ?? "w");
   if (totalComp === "面议") {
     state.modalError = "年总包薪资是必填项，哪怕先写一个估算值也可以。";
     render();
@@ -3076,7 +3079,8 @@ function showToast(message) {
 
 function customSelectDisplay(select, value) {
   const prefix = select.dataset.displayPrefix;
-  return prefix ? `${prefix}：${value}` : value;
+  const displayValue = value === "" ? "空" : value;
+  return prefix ? `${prefix}：${displayValue}` : displayValue;
 }
 
 function setCustomSelectValue(select, value) {
@@ -3095,6 +3099,16 @@ function setCustomSelectValue(select, value) {
   });
 }
 
+function syncMoneyField(shell) {
+  if (!shell) return;
+  const amount = shell.querySelector("[data-money-amount]");
+  const moneyName = amount?.dataset.moneyName;
+  const moneyValue = moneyName ? shell.querySelector(`[data-money-value][name="${moneyName}"]`) : shell.querySelector("[data-money-value]");
+  const unitInput = shell.querySelector(".money-unit-select input[type='hidden']");
+  if (!amount || !moneyValue) return;
+  moneyValue.value = formatMoneyValue(amount.value, unitInput?.value ?? amount.dataset.defaultUnit ?? "k");
+}
+
 function closeCustomSelects(except = null) {
   document.querySelectorAll("[data-custom-select].open").forEach((select) => {
     if (select === except) return;
@@ -3105,6 +3119,11 @@ function closeCustomSelects(except = null) {
 
 function applyCustomSelectValue(select, value) {
   const selectId = select.dataset.selectId;
+
+  if (select.classList.contains("money-unit-select")) {
+    syncMoneyField(select.closest(".money-input-shell"));
+    return;
+  }
 
   if (selectId === "city-filter") {
     state.filters.city = value;
@@ -3307,6 +3326,20 @@ function render(options = {}) {
     });
   }
 
+  if (options.funnelScroll) {
+    window.requestAnimationFrame(() => {
+      const board = document.querySelector(".funnel-board");
+      const list = document.querySelector(".funnel-list");
+      const target = board || list;
+      if (target) {
+        target.scrollLeft = Math.max(0, options.funnelScroll.left || 0);
+        target.scrollTop = Math.max(0, options.funnelScroll.top || 0);
+      }
+      window.scrollTo({ top: Math.max(0, options.funnelScroll.windowTop || 0), left: 0, behavior: "auto" });
+      syncTopbarState();
+    });
+  }
+
   if (options.focusId) {
     const target = document.getElementById(options.focusId);
     if (target) {
@@ -3334,6 +3367,20 @@ function moveJobToStatus(jobId, status) {
   syncJobData(job);
   return true;
 }
+
+document.addEventListener("pointerdown", (event) => {
+  const backdrop = event.target.closest("[data-modal-backdrop]");
+  modalPointerStartedOnBackdrop = Boolean(backdrop && !event.target.closest("[data-modal-panel]"));
+});
+
+document.addEventListener("pointerup", (event) => {
+  const backdrop = event.target.closest("[data-modal-backdrop]");
+  const endedOnBackdrop = Boolean(backdrop && !event.target.closest("[data-modal-panel]"));
+  if (modalPointerStartedOnBackdrop && endedOnBackdrop) {
+    closeModal();
+  }
+  modalPointerStartedOnBackdrop = false;
+});
 
 document.addEventListener("click", (event) => {
   const modalPanel = event.target.closest("[data-modal-panel]");
@@ -3421,7 +3468,6 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "close-modal") {
-    if (actionEl.classList.contains("modal-backdrop") && modalPanel) return;
     closeModal();
     return;
   }
@@ -3703,6 +3749,11 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-money-amount]")) {
+    syncMoneyField(event.target.closest(".money-input-shell"));
+    return;
+  }
+
   if (event.target.matches("[data-form-rating]")) {
     const input = event.target;
     input.style.setProperty("--rating", input.value);
@@ -3759,6 +3810,12 @@ document.addEventListener("drop", (event) => {
   if (!dropTarget) return;
 
   event.preventDefault();
+  const scrollContainer = document.querySelector(".funnel-board") || document.querySelector(".funnel-list");
+  const funnelScroll = {
+    left: scrollContainer?.scrollLeft || 0,
+    top: scrollContainer?.scrollTop || 0,
+    windowTop: window.scrollY || document.documentElement.scrollTop || 0
+  };
   const jobId = event.dataTransfer.getData("text/plain");
   const status = dropTarget.dataset.funnelDropStatus;
   clearDragTargets();
@@ -3766,7 +3823,7 @@ document.addEventListener("drop", (event) => {
 
   if (moveJobToStatus(jobId, status)) {
     showToast(`已移动到${statusMeta[status]?.title || status}`);
-    render();
+    render({ funnelScroll });
   }
 });
 
