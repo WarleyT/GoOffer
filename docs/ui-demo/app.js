@@ -1710,13 +1710,31 @@ function renderOffers() {
 }
 
 function offerScore(offer) {
-  const values = [offer.growth, offer.stability, offer.balance, offer.interest];
+  const values = [
+    offer.growth,
+    offer.stability,
+    offer.balance,
+    offer.interest,
+    ...offerCustomDimensions(offer).map((item) => item.score)
+  ];
   return values.reduce((sum, item) => sum + Number(item || 0), 0) / values.length;
+}
+
+function offerCustomDimensions(offer) {
+  return Array.isArray(offer?.customDimensions)
+    ? offer.customDimensions
+        .map((item) => ({
+          label: String(item?.label || "").trim(),
+          score: Math.min(5, Math.max(1, Number(item?.score || 3)))
+        }))
+        .filter((item) => item.label)
+    : [];
 }
 
 function renderOfferCard(job, isBest) {
   const offer = job.offer;
   const score = offerScore(offer);
+  const customDimensions = offerCustomDimensions(offer);
   return `
     <article class="offer-card card ${isBest ? "best" : ""}" data-offer-card data-job-id="${job.id}">
       <div class="offer-top">
@@ -1733,6 +1751,7 @@ function renderOfferCard(job, isBest) {
       ${ratingBlock(job.id, "成长空间", "growth", offer.growth)}
       ${ratingBlock(job.id, "稳定性", "stability", offer.stability)}
       ${ratingBlock(job.id, "工作生活平衡", "balance", offer.balance)}
+      ${customDimensions.map((item, index) => ratingBlock(job.id, item.label, `custom:${index}`, item.score)).join("")}
       <button class="offer-block offer-edit-block" type="button" data-action="open-offer-editor" data-job-id="${job.id}">
         <span class="offer-block-label">风险点</span>
         <p style="margin-top: 6px;">${escapeHtml(offer.risk)}</p>
@@ -1801,7 +1820,7 @@ function renderModal() {
 function modalShell(title, body, footer) {
   return `
     <div class="modal-backdrop" role="presentation" data-action="close-modal">
-      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel>
+      <section class="modal ${state.modal ? `modal-${state.modal}` : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title" data-modal-panel>
         <header class="modal-header">
           <div>
             <h2 id="modal-title">${title}</h2>
@@ -1818,9 +1837,12 @@ function modalShell(title, body, footer) {
 
 function renderLoginModal() {
   const isSignup = state.auth.mode === "signup";
+  const tip = isSignup
+    ? "邮箱仅作为登录信息，暂不进行验证"
+    : "登录后岗位、面试和 Offer 会同步到云端，AI 功能能够使用你的个人 API Key。";
   const body = `
     <form class="form-grid job-edit-form" id="login-form">
-      ${formSection(isSignup ? "注册新账号" : "登录账号", "邮箱仅作为登录信息，暂不进行验证", isSignup ? "sentiment_satisfied" : "account_circle", `
+      ${formSection(isSignup ? "注册新账号" : "登录账号", tip, isSignup ? "sentiment_satisfied" : "account_circle", `
         ${field("email", "邮箱", "", "you@example.com")}
         ${field("password", "密码", "", "至少 6 位")}
       `)}
@@ -2087,6 +2109,7 @@ function renderOfferSelectModal() {
 function renderOfferModal() {
   const job = activeJob();
   const offer = job.offer;
+  const customDimension = offerCustomDimensions(offer)[0] || { label: "", score: 3 };
   const body = `
     <form class="form-grid job-edit-form offer-edit-form" id="offer-form">
       ${formSection("薪资与工作", "先记录 Offer 的核心条件，用于后续横向比较。", "payments", `
@@ -2095,10 +2118,12 @@ function renderOfferModal() {
         ${selectField("workStyle", "工作模式", workStyles, normalizeWorkStyle(offer ? offer.workStyle : "", job.city))}
       `)}
       ${formSection("评分与风险", "从成长、稳定性、生活节奏和个人兴趣四个维度打分。", "query_stats", `
-        ${selectField("growth", "成长空间", ["1", "2", "3", "4", "5"], offer ? String(offer.growth) : "4")}
-        ${selectField("stability", "稳定性", ["1", "2", "3", "4", "5"], offer ? String(offer.stability) : "4")}
-        ${selectField("balance", "工作生活平衡", ["1", "2", "3", "4", "5"], offer ? String(offer.balance) : "4")}
-        ${selectField("interest", "个人兴趣", ["1", "2", "3", "4", "5"], offer ? String(offer.interest) : "4")}
+        ${ratingSliderField("growth", "成长空间", offer ? offer.growth : 4)}
+        ${ratingSliderField("stability", "稳定性", offer ? offer.stability : 4)}
+        ${ratingSliderField("balance", "工作生活平衡", offer ? offer.balance : 4)}
+        ${ratingSliderField("interest", "个人兴趣", offer ? offer.interest : 4)}
+        ${field("customDimensionLabel", "自定义维度", customDimension.label, "例如 团队氛围")}
+        ${ratingSliderField("customDimensionScore", "自定义维度评分", customDimension.score, "不填维度名称则不保存")}
         ${textareaField("risk", "风险点", offer ? offer.risk : "", "例如 节奏较快，需要确认团队资源")}
       `)}
     </form>
@@ -2127,6 +2152,20 @@ function field(name, label, value, placeholder) {
     <label class="field">
       <span>${label}</span>
       <input name="${name}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}">
+    </label>
+  `;
+}
+
+function ratingSliderField(name, label, value, hint = "") {
+  const safeValue = Math.min(5, Math.max(1, Number(value || 3)));
+  return `
+    <label class="field rating-slider-field">
+      <span>
+        ${label}
+        <output data-form-rating-output for="${name}">${safeValue}</output>
+      </span>
+      <input type="range" name="${name}" min="1" max="5" step="1" value="${safeValue}" style="--rating:${safeValue};" data-form-rating>
+      ${hint ? `<small>${escapeHtml(hint)}</small>` : ""}
     </label>
   `;
 }
@@ -2634,6 +2673,8 @@ async function saveOffer() {
   }
 
   const job = activeJob();
+  const customDimensionLabel = String(data.customDimensionLabel || "").trim();
+  const customDimensionScore = Math.min(5, Math.max(1, Number(data.customDimensionScore || 3)));
   job.offer = {
     location: data.location.trim() || job.city,
     totalComp,
@@ -2643,6 +2684,7 @@ async function saveOffer() {
     stability: Number(data.stability),
     balance: Number(data.balance),
     interest: Number(data.interest),
+    customDimensions: customDimensionLabel ? [{ label: customDimensionLabel, score: customDimensionScore }] : [],
     risk: data.risk.trim() || "暂无明显风险点。",
     decision: "待决定"
   };
@@ -2683,7 +2725,16 @@ function updateOfferRating(input) {
   if (!job?.offer || !field) return;
 
   const value = Number(input.value);
-  job.offer[field] = value;
+  if (field.startsWith("custom:")) {
+    const index = Number(field.split(":")[1]);
+    const customDimensions = offerCustomDimensions(job.offer);
+    if (!Number.isNaN(index) && customDimensions[index]) {
+      customDimensions[index].score = value;
+      job.offer.customDimensions = customDimensions;
+    }
+  } else {
+    job.offer[field] = value;
+  }
 
   const block = input.closest(".rating-block");
   const card = input.closest("[data-offer-card]");
@@ -3408,11 +3459,20 @@ document.addEventListener("change", (event) => {
 
   if (target.matches("[data-offer-rating]")) {
     updateOfferRating(target);
-    render();
+    return;
   }
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.matches("[data-form-rating]")) {
+    const input = event.target;
+    input.style.setProperty("--rating", input.value);
+    const field = input.closest(".rating-slider-field");
+    const output = field?.querySelector("[data-form-rating-output]");
+    if (output) output.textContent = input.value;
+    return;
+  }
+
   if (event.target.matches("[data-offer-rating]")) {
     updateOfferRating(event.target);
     return;
