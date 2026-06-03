@@ -65,6 +65,7 @@ function parseMoneyParts(value, fallbackUnit = "k") {
   const normalized = raw
     .replace(/^RMB\s*/i, "")
     .replace(/^CNY\s*/i, "")
+    .replace(/^￥\s*/, "")
     .replace(/^¥\s*/, "")
     .replace(/^USD\s*/i, "")
     .trim();
@@ -86,6 +87,7 @@ function formatMoneyValue(amount, unit = "k") {
   const normalizedAmount = String(amount || "")
     .replace(/^RMB\s*/i, "")
     .replace(/^CNY\s*/i, "")
+    .replace(/^￥\s*/, "")
     .replace(/^¥\s*/, "")
     .replace(/^USD\s*/i, "")
     .replace(/(w|k|万|千)/gi, "")
@@ -94,7 +96,7 @@ function formatMoneyValue(amount, unit = "k") {
     .replace(/\s+/g, " ")
     .trim();
   const safeUnit = salaryUnits.includes(unit) ? unit : "k";
-  return normalizedAmount ? `RMB ${normalizedAmount}${safeUnit}` : "面议";
+  return normalizedAmount ? `￥${normalizedAmount}${safeUnit}` : "面议";
 }
 
 function normalizeMoneyDisplay(value, fallbackUnit = "k") {
@@ -107,6 +109,14 @@ function moneyComparable(value) {
   const numbers = amount.match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
   const base = numbers.length ? numbers.reduce((sum, number) => sum + number, 0) / numbers.length : 0;
   return unit === "w" ? base * 10 : base;
+}
+
+function salarySortComparable(value) {
+  const { amount, unit } = parseMoneyParts(value, "");
+  const firstNumber = amount.match(/\d+(?:\.\d+)?/)?.[0];
+  if (!firstNumber) return 0;
+  const multiplier = unit === "w" ? 10000 : unit === "k" ? 1000 : 1;
+  return Number(firstNumber) * multiplier;
 }
 
 function normalizeWorkStyle(value, city = "") {
@@ -122,7 +132,7 @@ const jobs = [
     company: "ByteDance",
     title: "高级前端开发工程师",
     city: "北京",
-    salary: "RMB 35 - 50k",
+    salary: "￥35 - 50k",
     source: "内推",
     priority: "高",
     status: "面试中",
@@ -171,7 +181,7 @@ const jobs = [
     company: "腾讯",
     title: "资深产品经理",
     city: "深圳",
-    salary: "RMB 40 - 65k",
+    salary: "￥40 - 65k",
     source: "Boss 直聘",
     priority: "高",
     status: "已投递",
@@ -189,7 +199,7 @@ const jobs = [
     company: "微软",
     title: "Cloud PM",
     city: "苏州",
-    salary: "RMB 30 - 45k",
+    salary: "￥30 - 45k",
     source: "官网",
     priority: "中",
     status: "面试中",
@@ -221,7 +231,7 @@ const jobs = [
     company: "美团",
     title: "UI 设计师",
     city: "上海",
-    salary: "RMB 25 - 40k",
+    salary: "￥25 - 40k",
     source: "猎头",
     priority: "中",
     status: "已拿Offer",
@@ -235,7 +245,7 @@ const jobs = [
     aiSummary: null,
     offer: {
       location: "上海",
-      totalComp: "RMB 45w",
+      totalComp: "￥45w",
       cashWidth: 78,
       workStyle: "线下",
       growth: 4,
@@ -251,7 +261,7 @@ const jobs = [
     company: "Shopify",
     title: "Growth Analyst",
     city: "远程",
-    salary: "RMB 60 - 90k",
+    salary: "￥60 - 90k",
     source: "LinkedIn",
     priority: "低",
     status: "已拿Offer",
@@ -265,7 +275,7 @@ const jobs = [
     aiSummary: null,
     offer: {
       location: "远程",
-      totalComp: "RMB 90w",
+      totalComp: "￥90w",
       cashWidth: 72,
       workStyle: "远程",
       growth: 4,
@@ -320,7 +330,9 @@ const state = {
     user: null,
     mode: "signin"
   },
-  aiProvider: null
+  aiProvider: null,
+  expandedJobDescriptions: new Set(),
+  quickEditField: null
 };
 
 const app = document.getElementById("app");
@@ -329,6 +341,10 @@ const toastRoot = document.getElementById("toast-root");
 let topbarCollapsed = false;
 let modalPointerStartedOnBackdrop = false;
 const authStorageKey = "gooffer.supabase.session";
+
+function seedStorageKey() {
+  return state.auth.user?.id ? `gooffer.demo.seeded.${state.auth.user.id}` : "";
+}
 
 function currentUserEmail() {
   return state.auth.user?.email || state.auth.session?.user?.email || "未登录";
@@ -486,6 +502,10 @@ function isRemoteReady() {
   return state.auth.configured && Boolean(state.auth.session?.access_token);
 }
 
+function isUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
 async function supabaseTable(path, options = {}) {
   if (!(await refreshSessionIfNeeded())) {
     throw new Error("登录状态已失效，已自动退出。");
@@ -501,7 +521,9 @@ async function supabaseTable(path, options = {}) {
 }
 
 function remoteSalary(row, amountField = "salary_amount", unitField = "salary_unit", displayField = "salary_display") {
-  return row[displayField] || formatMoneyValue(row[amountField], row[unitField] || "k");
+  return row[displayField]
+    ? normalizeMoneyDisplay(row[displayField], row[unitField] || "")
+    : formatMoneyValue(row[amountField], row[unitField] || "k");
 }
 
 function mapRemoteJob(row, interviews = [], offer = null, summaries = []) {
@@ -568,6 +590,44 @@ function mapRemoteSummary(row) {
   };
 }
 
+async function seedDemoWorkspaceIfNeeded() {
+  const key = seedStorageKey();
+  if (!key || localStorage.getItem(key) === "1") return false;
+
+  const demoJobs = jobs.map((job) => ({
+    ...job,
+    tags: [...job.tags],
+    interviews: job.interviews.map((interview) => ({
+      ...interview,
+      questions: interview.questions.map((question) => ({ ...question }))
+    })),
+    offer: job.offer ? { ...job.offer } : null,
+    aiSummary: job.aiSummary ? { ...job.aiSummary } : null
+  }));
+
+  const seededJobs = [];
+  for (const demoJob of demoJobs) {
+    const createdJob = await createRemoteJobFromDemo(demoJob);
+    createdJob.interviews = demoJob.interviews;
+    createdJob.offer = demoJob.offer;
+    createdJob.aiSummary = demoJob.aiSummary;
+    seededJobs.push(createdJob);
+
+    for (const interview of demoJob.interviews) {
+      await saveRemoteInterviewFromDemo(createdJob, interview);
+    }
+    if (demoJob.offer) {
+      await saveRemoteOfferFromDemo(createdJob);
+    }
+  }
+
+  localStorage.setItem(key, "1");
+  jobs.splice(0, jobs.length, ...seededJobs);
+  state.activeJobId = seededJobs[0]?.id || "";
+  state.offerSelection = jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
+  return true;
+}
+
 async function loadRemoteWorkspace() {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
@@ -608,6 +668,14 @@ async function loadRemoteWorkspace() {
     jobs.splice(0, jobs.length, ...nextJobs);
     state.activeJobId = nextJobs[0].id;
     state.offerSelection = jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
+  } else {
+    const seeded = await seedDemoWorkspaceIfNeeded();
+    const key = seedStorageKey();
+    if (!seeded && key && localStorage.getItem(key) === "1") {
+      jobs.splice(0, jobs.length);
+      state.activeJobId = "";
+      state.offerSelection = [];
+    }
   }
 }
 
@@ -643,6 +711,7 @@ async function createRemoteJobFromDemo(job) {
 async function updateRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
+  if (!isUuid(job.id)) return;
   const salary = parseMoneyParts(job.salary, "k");
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
     method: "PATCH",
@@ -665,7 +734,39 @@ async function updateRemoteJobFromDemo(job) {
 async function deleteRemoteJobFromDemo(jobId) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
+  if (!isUuid(jobId)) return;
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, { method: "DELETE" });
+}
+
+async function persistLocalJobAsRemote(job) {
+  const index = jobs.findIndex((item) => item.id === job.id);
+  const localJob = {
+    ...job,
+    tags: [...job.tags],
+    interviews: job.interviews.map((interview) => ({
+      ...interview,
+      questions: interview.questions.map((question) => ({ ...question }))
+    })),
+    offer: job.offer ? { ...job.offer } : null,
+    aiSummary: job.aiSummary ? { ...job.aiSummary } : null
+  };
+
+  const createdJob = await createRemoteJobFromDemo(localJob);
+  createdJob.interviews = localJob.interviews;
+  createdJob.offer = localJob.offer;
+  createdJob.aiSummary = localJob.aiSummary;
+  for (const interview of localJob.interviews) {
+    await saveRemoteInterviewFromDemo(createdJob, interview);
+  }
+  if (localJob.offer) {
+    await saveRemoteOfferFromDemo(createdJob);
+  }
+
+  if (index >= 0) {
+    jobs.splice(index, 1, createdJob);
+  }
+  state.activeJobId = createdJob.id;
+  return createdJob;
 }
 
 async function saveRemoteInterviewFromDemo(job, interview) {
@@ -851,9 +952,9 @@ function sourceValueHtml(value) {
 
   const href = normalizeExternalUrl(value);
   return `
-    <a class="source-link-button" href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">
+    <a class="source-link-button" href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener" aria-label="打开招聘渠道链接">
       <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
-      点击进入
+      <span>点击进入</span>
     </a>
   `;
 }
@@ -1245,7 +1346,7 @@ function filteredJobs() {
 
   const order = [...filtered];
   if (state.filters.sort === "薪资") {
-    order.sort((a, b) => moneyComparable(b.salary) - moneyComparable(a.salary) || compareByProgress(a, b));
+    order.sort((a, b) => salarySortComparable(b.salary) - salarySortComparable(a.salary) || compareByProgress(a, b));
     return order;
   }
   if (state.filters.sort === "优先级") {
@@ -1521,11 +1622,24 @@ function renderJobCard(job) {
   `;
 }
 
+function renderJobDescription(job) {
+  const expanded = state.expandedJobDescriptions.has(job.id);
+  return `
+    <div class="job-description-shell ${expanded ? "is-expanded" : "is-collapsed"}" data-description-shell data-job-id="${escapeHtml(job.id)}">
+      <p class="description job-description-text" data-description-clamp>${escapeHtml(job.description)}</p>
+      <button class="description-toggle" type="button" data-action="toggle-job-description" data-job-id="${escapeHtml(job.id)}" aria-expanded="${expanded ? "true" : "false"}">
+        <span>${expanded ? "收起" : "展开"}</span>
+        <span class="material-symbols-outlined" aria-hidden="true">${expanded ? "expand_less" : "expand_more"}</span>
+      </button>
+    </div>
+  `;
+}
+
 function renderDetail() {
   const job = activeJob();
   if (!job) {
     return pageHeader(
-      "Job Detail",
+      "岗位详情",
       "岗位详情、面试记录和总结沉淀在同一页。"
     ) + `
       <section class="card card-pad">
@@ -1537,7 +1651,7 @@ function renderDetail() {
   const transitionClass = state.jobSwitchDirection ? ` detail-transition-${state.jobSwitchDirection}` : "";
 
   return pageHeader(
-    "Job Detail",
+    "岗位详情",
     "岗位详情、面试记录和总结沉淀在同一页。"
   ) + `
     <section class="detail-layout${transitionClass}">
@@ -1548,7 +1662,7 @@ function renderDetail() {
               <span class="logo-tile large ${job.logoTone}">${escapeHtml(job.logo)}</span>
               <div class="hero-copy">
                 <h1>${escapeHtml(job.company)} · ${escapeHtml(job.title)}</h1>
-                <p class="description">${escapeHtml(job.description)}</p>
+                ${renderJobDescription(job)}
                 <div class="hero-meta-row">
                   <div class="tag-row">
                     ${job.tags.map((tag) => `<span class="badge todo">${escapeHtml(tag)}</span>`).join("")}
@@ -1574,8 +1688,8 @@ function renderDetail() {
 
         <section class="card card-pad quick-info">
           <h2>岗位概览</h2>
-          ${quickItem("location_on", "城市", job.city)}
-          ${quickItem("payments", "薪资范围", job.salary)}
+          ${quickItem("location_on", "城市", job.city, "city")}
+          ${quickItem("payments", "薪资范围", job.salary, "salary")}
           ${sourceQuickItem(job.source)}
         </section>
 
@@ -1633,13 +1747,55 @@ function statusQuickControl(job) {
   });
 }
 
-function quickItem(icon, label, value) {
+function renderQuickEditor(field, value) {
+  if (field === "salary") {
+    const parts = parseMoneyParts(value, "");
+    return `
+      <form class="quick-edit-form" data-quick-edit-form data-field="salary">
+        <input id="quick-edit-salary" name="salaryAmount" value="${escapeHtml(parts.amount)}" placeholder="例如 35 - 50" data-quick-edit-input>
+        ${customSelect({ name: "salaryUnit", label: "薪资单位", options: salaryUnits, value: parts.unit, className: "quick-unit-select" })}
+        <button type="button" class="quick-edit-icon" data-action="save-quick-edit" aria-label="保存薪资范围">
+          <span class="material-symbols-outlined" aria-hidden="true">check</span>
+        </button>
+        <button type="button" class="quick-edit-icon surface" data-action="cancel-quick-edit" aria-label="取消编辑">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </form>
+    `;
+  }
+
   return `
-    <div class="quick-item">
+    <form class="quick-edit-form" data-quick-edit-form data-field="${escapeHtml(field)}">
+      <input id="quick-edit-${escapeHtml(field)}" name="quickValue" value="${escapeHtml(value)}" placeholder="${field === "city" ? "例如 深圳" : "粘贴投递链接或渠道名称"}" data-quick-edit-input>
+      <button type="button" class="quick-edit-icon" data-action="save-quick-edit" aria-label="保存${field === "city" ? "城市" : "招聘渠道"}">
+        <span class="material-symbols-outlined" aria-hidden="true">check</span>
+      </button>
+      <button type="button" class="quick-edit-icon surface" data-action="cancel-quick-edit" aria-label="取消编辑">
+        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      </button>
+    </form>
+  `;
+}
+
+function renderQuickValue(field, value, label) {
+  if (state.quickEditField === field) {
+    return renderQuickEditor(field, value);
+  }
+
+  return `
+    <button class="quick-value-button" type="button" data-action="open-quick-edit" data-field="${escapeHtml(field)}" aria-label="编辑${escapeHtml(label)}">
+      <strong>${escapeHtml(value)}</strong>
+    </button>
+  `;
+}
+
+function quickItem(icon, label, value, field = "") {
+  return `
+    <div class="quick-item${field ? " quick-item-editable" : ""}">
       <span class="round-icon material-symbols-outlined" aria-hidden="true">${icon}</span>
       <div>
         <span>${label}</span>
-        <strong>${escapeHtml(value)}</strong>
+        ${field ? renderQuickValue(field, value, label) : `<strong>${escapeHtml(value)}</strong>`}
       </div>
     </div>
   `;
@@ -1647,11 +1803,12 @@ function quickItem(icon, label, value) {
 
 function sourceQuickItem(value) {
   return `
-    <div class="quick-item source-quick-item">
+    <div class="quick-item source-quick-item quick-item-editable">
       <span class="round-icon material-symbols-outlined" aria-hidden="true">campaign</span>
       <div>
         <span>招聘渠道</span>
-        ${sourceValueHtml(value)}
+        ${renderQuickValue("source", value, "招聘渠道")}
+        ${state.quickEditField === "source" || !isSourceLink(value) ? "" : sourceValueHtml(value)}
       </div>
     </div>
   `;
@@ -1972,11 +2129,11 @@ function renderJobModal() {
   const body = `
     <form class="form-grid job-edit-form" id="job-form">
       ${formSection("基础信息", "公司、岗位、城市和薪资先定好，后续筛选才好用。", "business_center", `
-        ${field("company", "公司名称", editing ? job.company : "", "例如 ByteDance")}
         ${field("title", "岗位名称", editing ? job.title : "", "例如 前端工程师")}
+        ${field("company", "公司名称", editing ? job.company : "", "例如 ByteDance")}
         ${field("city", "城市", editing ? job.city : "", "例如 上海")}
         ${moneyField("salary", "薪资范围", editing ? job.salary : "", "35 - 50", "k")}
-        ${textareaField("description", "岗位要求", editing ? job.description : "", "补充岗位职责、要求或备注")}
+        ${textareaField("description", "岗位详情", editing ? job.description : "", "补充岗位职责、要求、JD 或备注")}
         ${editing ? "" : jobRecognitionPanel()}
       `, "", editing ? "" : "data-job-recognition")}
       ${formSection("投递信息", "记录当前阶段、优先级、来源和可检索标签。", "track_changes", `
@@ -2269,7 +2426,7 @@ function moneyField(name, label, value, placeholder, fallbackUnit = "k") {
   const parts = parseMoneyParts(value, fallbackUnit);
   const unitName = `${name}Unit`;
   const amountName = `${name}Amount`;
-  const displayLabel = label.includes("RMB") ? label : `${label}（RMB）`;
+  const displayLabel = label.includes("￥") ? label : `${label}（￥）`;
   return `
     <label class="field money-field">
       <span>${displayLabel}</span>
@@ -2421,7 +2578,7 @@ function looksLikeCompany(line) {
 function isJobMetaLine(line) {
   if (!line) return true;
   if (hasSalary(line)) return true;
-  if (/岗位职责|工作职责|职位描述|职位详情|任职要求|岗位要求|公司介绍|福利|亮点|发布|更新|收藏|立即|沟通|申请|投递|分享|举报/.test(line)) return true;
+  if (/岗位职责|工作职责|职位描述|职位详情|岗位描述|岗位详情|职位介绍|工作描述|JD|jd|任职要求|岗位要求|职位要求|任职资格|公司介绍|福利|亮点|发布|更新|收藏|立即|沟通|申请|投递|分享|举报/.test(line)) return true;
   if (/经验|学历|本科|大专|硕士|博士|校招|社招|全职|兼职|薪|待遇|五险|双休/.test(line) && !looksLikeTitle(line)) return true;
   if (/^\d+[\-~—–至到]\d+年/.test(line)) return true;
   if (detectCity(line) && line.length <= 10 && !looksLikeTitle(line)) return true;
@@ -2459,6 +2616,11 @@ function titleScore(line, index) {
 function detectTitleLine(lines, labeledTitle = "") {
   if (labeledTitle && !/职责|要求|描述|详情/.test(labeledTitle)) return stripTitleNoise(labeledTitle);
 
+  const firstLine = stripTitleNoise(lines[0] || "");
+  if (firstLine && titleScore(firstLine, 0) >= 18 && !looksLikeCompany(firstLine)) {
+    return firstLine;
+  }
+
   return lines
     .map((line, index) => ({ value: stripTitleNoise(line), score: titleScore(line, index) }))
     .filter((item) => item.score > 0)
@@ -2479,7 +2641,7 @@ function detectCompanyLine(lines, titleLine = "", labeledCompany = "") {
 }
 
 function extractJobDescription(lines, excluded = new Set()) {
-  const start = lines.findIndex((line) => /岗位职责|工作职责|职位描述|职位详情|任职要求|岗位要求|工作内容|任职资格|职位要求/i.test(line));
+  const start = lines.findIndex((line) => /岗位职责|工作职责|职位描述|职位详情|岗位描述|岗位详情|职位介绍|工作描述|JD|任职要求|岗位要求|工作内容|任职资格|职位要求/i.test(line));
   const source = start >= 0 ? lines.slice(start) : lines;
   return source
     .filter((line) => !excluded.has(line))
@@ -2494,7 +2656,7 @@ function extractJobPostingFromText(text) {
   const compactText = lines.join("\n");
   const salary = detectSalary(compactText);
   const labeledCompany = extractByLabel(lines, ["公司名称", "企业名称", "雇主", "公司"], ["公司介绍"]);
-  const labeledTitle = extractByLabel(lines, ["岗位名称", "职位名称", "招聘职位", "职位", "岗位"], ["岗位职责", "岗位要求", "职位描述", "职位详情"]);
+  const labeledTitle = extractByLabel(lines, ["岗位名称", "职位名称", "招聘职位", "职位", "岗位"], ["岗位职责", "岗位要求", "职位描述", "职位详情", "岗位描述", "岗位详情", "JD"]);
   const titleLine = detectTitleLine(lines, labeledTitle);
   const companyLine = detectCompanyLine(lines, titleLine, labeledCompany);
   const city = detectCity(compactText);
@@ -2775,7 +2937,11 @@ async function saveJob(editing = false) {
     });
     syncJobData(job);
     try {
-      await updateRemoteJobFromDemo(job);
+      if (isRemoteReady() && !isUuid(job.id)) {
+        await persistLocalJobAsRemote(job);
+      } else {
+        await updateRemoteJobFromDemo(job);
+      }
     } catch (error) {
       state.modalError = error instanceof Error ? error.message : "岗位同步失败。";
       render();
@@ -2819,6 +2985,40 @@ async function saveJob(editing = false) {
   showToast(editing ? "岗位信息已更新" : "岗位已添加，并进入详情页");
 }
 
+async function saveQuickEdit() {
+  const form = document.querySelector("[data-quick-edit-form]");
+  const job = activeJob();
+  if (!form || !job) return;
+
+  const field = form.dataset.field;
+  const data = Object.fromEntries(new FormData(form).entries());
+  if (field === "city") {
+    job.city = String(data.quickValue || "").trim() || "未填写";
+  } else if (field === "source") {
+    job.source = String(data.quickValue || "").trim() || "手动录入";
+  } else if (field === "salary") {
+    job.salary = formatMoneyValue(data.salaryAmount, data.salaryUnit ?? "");
+  }
+
+  job.updated = "刚刚";
+  syncJobData(job);
+  try {
+    if (isRemoteReady() && !isUuid(job.id)) {
+      await persistLocalJobAsRemote(job);
+    } else {
+      await updateRemoteJobFromDemo(job);
+    }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : "岗位同步失败。");
+    renderToast();
+    return;
+  }
+
+  state.quickEditField = null;
+  showToast("岗位概览已更新");
+  render({ scrollTop: window.scrollY || 0 });
+}
+
 async function deletePendingJob() {
   const jobId = state.pendingDeleteJobId || activeJob()?.id;
   const job = jobs.find((item) => item.id === jobId);
@@ -2830,6 +3030,10 @@ async function deletePendingJob() {
   const index = jobs.findIndex((item) => item.id === jobId);
   try {
     await deleteRemoteJobFromDemo(jobId);
+    if (isRemoteReady() && !isUuid(jobId)) {
+      const key = seedStorageKey();
+      if (key) localStorage.setItem(key, "1");
+    }
   } catch (error) {
     state.modalError = error instanceof Error ? error.message : "删除同步失败。";
     render();
@@ -2837,6 +3041,7 @@ async function deletePendingJob() {
   }
   jobs.splice(index, 1);
   state.offerSelection = state.offerSelection.filter((id) => id !== jobId);
+  state.expandedJobDescriptions.delete(jobId);
   state.activeJobId = jobs[Math.max(0, Math.min(index, jobs.length - 1))]?.id || "";
   state.pendingDeleteJobId = "";
   state.modal = null;
@@ -3315,6 +3520,7 @@ function render(options = {}) {
   document.body.classList.toggle("modal-open", Boolean(state.modal));
   syncSidebarState();
   syncTopbarState();
+  window.requestAnimationFrame(syncDescriptionClampState);
   state.jobSwitchDirection = "";
   state.suppressFunnelMotion = false;
   state.funnelTransition = "";
@@ -3352,6 +3558,17 @@ function render(options = {}) {
   }
 }
 
+function syncDescriptionClampState() {
+  document.querySelectorAll("[data-description-shell]").forEach((shell) => {
+    const text = shell.querySelector("[data-description-clamp]");
+    if (!text) return;
+    const styles = window.getComputedStyle(text);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || Number.parseFloat(styles.fontSize) * 1.4 || 22;
+    const maxCollapsedHeight = lineHeight * 2;
+    shell.classList.toggle("is-overflowing", text.scrollHeight > maxCollapsedHeight + 1);
+  });
+}
+
 function clearDragTargets() {
   document.querySelectorAll(".drag-over").forEach((target) => target.classList.remove("drag-over"));
   document.querySelectorAll(".is-dragging").forEach((target) => target.classList.remove("is-dragging"));
@@ -3382,7 +3599,17 @@ document.addEventListener("pointerup", (event) => {
   modalPointerStartedOnBackdrop = false;
 });
 
+document.addEventListener("submit", (event) => {
+  if (event.target.matches("[data-quick-edit-form]")) {
+    event.preventDefault();
+    void saveQuickEdit();
+  }
+});
+
 document.addEventListener("click", (event) => {
+  if (event.target.closest(".source-link-button")) {
+    return;
+  }
   const modalPanel = event.target.closest("[data-modal-panel]");
   const selectRoot = event.target.closest("[data-custom-select]");
   const dateTimeRoot = event.target.closest("[data-date-time-picker]");
@@ -3446,6 +3673,34 @@ document.addEventListener("click", (event) => {
     if (!picker) return;
     applyDateTimePicker(picker);
     closeDateTimePickers();
+    return;
+  }
+
+  if (action === "open-quick-edit") {
+    state.quickEditField = actionEl.dataset.field || null;
+    render({ scrollTop: window.scrollY || 0, focusId: `quick-edit-${state.quickEditField}` });
+    return;
+  }
+
+  if (action === "cancel-quick-edit") {
+    state.quickEditField = null;
+    render({ scrollTop: window.scrollY || 0 });
+    return;
+  }
+
+  if (action === "save-quick-edit") {
+    void saveQuickEdit();
+    return;
+  }
+
+  if (action === "toggle-job-description") {
+    const jobId = actionEl.dataset.jobId || activeJob()?.id;
+    if (state.expandedJobDescriptions.has(jobId)) {
+      state.expandedJobDescriptions.delete(jobId);
+    } else {
+      state.expandedJobDescriptions.add(jobId);
+    }
+    render({ scrollTop: window.scrollY || 0 });
     return;
   }
 
@@ -3833,6 +4088,12 @@ document.addEventListener("dragend", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.quickEditField) {
+    state.quickEditField = null;
+    render({ scrollTop: window.scrollY || 0 });
+    return;
+  }
+
   if (event.key === "Escape" && document.querySelector("[data-date-time-picker].open")) {
     closeDateTimePickers();
     return;
@@ -3865,6 +4126,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("scroll", syncTopbarState, { passive: true });
+window.addEventListener("resize", syncDescriptionClampState, { passive: true });
 
 async function initApp() {
   try {
