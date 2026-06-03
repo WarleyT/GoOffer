@@ -467,8 +467,15 @@ async function signUp(email, password) {
   if (payload.access_token) {
     saveSession(payload);
     await loadRemoteWorkspace();
+    return "signed-in";
   } else {
-    showToast("注册成功，请先完成邮箱确认后登录");
+    try {
+      await signIn(email, password);
+      return "signed-in";
+    } catch {
+      showToast("注册成功，请先完成邮箱确认后登录");
+      return "pending-confirmation";
+    }
   }
 }
 
@@ -496,6 +503,71 @@ function escapeHtml(value) {
 
 function activeJob() {
   return jobs.find((job) => job.id === state.activeJobId) || jobs[0];
+}
+
+function applyUrlState() {
+  const params = new URLSearchParams(window.location.search);
+  const screen = params.get("screen");
+  const jobId = params.get("job");
+
+  if (jobId && jobs.some((job) => job.id === jobId)) {
+    state.activeJobId = jobId;
+    state.screen = "detail";
+    return;
+  }
+
+  if (screenMapHas(screen)) {
+    state.screen = screen;
+  }
+}
+
+function detailShareUrl(job = activeJob()) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("screen", "detail");
+  if (job?.id) {
+    url.searchParams.set("job", job.id);
+  } else {
+    url.searchParams.delete("job");
+  }
+  url.hash = "";
+  return url.toString();
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("复制失败");
+  return true;
+}
+
+async function shareDetailLink() {
+  const job = activeJob();
+  if (!job) {
+    showToast("当前没有可分享的岗位");
+    renderToast();
+    return;
+  }
+
+  const url = detailShareUrl(job);
+  try {
+    await copyText(url);
+    showToast("岗位详情链接已复制");
+  } catch {
+    showToast(`复制失败，请手动复制：${url}`);
+  }
+  renderToast();
 }
 
 function isRemoteReady() {
@@ -1105,7 +1177,7 @@ function renderShell(content) {
     dashboard: button("新增岗位", "open-job-modal"),
     jobs: button("新增岗位", "open-job-modal"),
     detail: `
-      ${button("分享", "toast", "surface", `data-message="分享链接已复制"`)}
+      ${button("分享", "share-detail", "surface")}
       ${button("编辑岗位", "open-job-modal", "dark")}
     `,
     offers: button("选择Offer", "open-offer-select-modal")
@@ -2843,9 +2915,22 @@ async function handleLoginSubmit(signup = false) {
     state.modal = null;
     state.modalError = "";
     document.body.classList.remove("modal-open");
-    showToast(signup ? "账号已创建" : "登录成功");
+    showToast(signup && state.auth.session ? "账号已创建并登录" : signup ? "账号已创建" : "登录成功");
     render();
   } catch (error) {
+    if (signup) {
+      try {
+        await signIn(email, password);
+        state.modal = null;
+        state.modalError = "";
+        document.body.classList.remove("modal-open");
+        showToast("账号已创建并登录");
+        render();
+        return;
+      } catch {
+        // Keep the original signup error below so users see the real registration problem.
+      }
+    }
     state.modalError = error instanceof Error ? error.message : "账号操作失败。";
     render();
   }
@@ -3967,6 +4052,11 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "share-detail") {
+    void shareDetailLink();
+    return;
+  }
+
   if (action === "toast") {
     showToast(actionEl.dataset.message || "操作已完成");
     renderToast();
@@ -4143,6 +4233,7 @@ async function initApp() {
     showToast(error instanceof Error ? error.message : "初始化失败，已进入 demo 模式");
   } finally {
     state.booting = false;
+    applyUrlState();
     if (!state.auth.configured) {
       showToast("Supabase 未配置，当前为本地 demo 模式");
     }
