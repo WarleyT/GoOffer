@@ -1993,7 +1993,7 @@ function jobRecognitionPanel() {
           AI 识图
         </button>
       </div>
-      <p class="recognition-status" data-recognition-status>链接识别会读取公开招聘页；普通文本识别不调用 API；AI 识图会使用你绑定的支持图片模型。</p>
+      <p class="recognition-status" data-recognition-status>链接会优先读取公开岗位数据；已绑定 AI 时会辅助抽取。普通粘贴文本不调用 API。</p>
       <div class="recognition-preview" data-recognition-preview></div>
     </section>
     <input class="job-upload-input" type="file" accept="image/*" data-job-image-input>
@@ -2190,7 +2190,7 @@ function checkboxField(name, label, checked = false) {
       <span class="toggle-track" aria-hidden="true"><span></span></span>
       <span class="vision-toggle-copy">
         <strong>${label}</strong>
-        <small>开启后，AI 识图会调用你绑定的视觉模型；粘贴文本和链接识别不消耗 API。</small>
+        <small>开启后，AI 识图会调用你绑定的视觉模型；粘贴文本不消耗 API，链接识别可能使用文本模型提升准确率。</small>
       </span>
     </label>
   `;
