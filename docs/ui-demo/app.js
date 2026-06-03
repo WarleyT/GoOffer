@@ -1863,10 +1863,11 @@ function renderAiSettingsModal() {
   const provider = state.aiProvider;
   const body = `
     <form class="form-grid job-edit-form" id="ai-settings-form">
-      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，只用于 AI 面试总结；岗位截图识别已改为本地 OCR，不再消耗你的 API。", "auto_awesome", `
+      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，默认用于 AI 面试总结；勾选图片识别后，也可用于岗位截图识别。", "auto_awesome", `
         ${field("baseUrl", "Base URL", provider?.base_url || "https://api.openai.com/v1", "https://api.openai.com/v1")}
         ${field("model", "模型", provider?.model || "gpt-4o-mini", "gpt-4o-mini")}
         ${field("apiKey", "API Key", "", provider?.api_key_hint || "sk-...")}
+        ${checkboxField("supportsVision", "这个模型支持图片识别", Boolean(provider?.supports_vision))}
       `, `<button class="section-action-button" type="button" data-action="open-ai-help">
         <span class="material-symbols-outlined" aria-hidden="true">help</span>
         如何获取
@@ -1898,8 +1899,9 @@ function renderAiHelpModal() {
       <p>OpenAI 官方路径：进入 OpenAI Platform，打开 API Keys 页面，点击 Create new secret key，复制以 <code>sk-</code> 开头的密钥。</p>
       <p>保存后密钥只会显示一次，请立刻复制。GoOffer 会加密保存，只用于你的 AI 面试总结。</p>
 
-      <h3>截图识别还需要 API Key 吗？</h3>
-      <p>不需要。岗位截图识别使用浏览器本地 OCR 和规则抽取，不调用你的 API，也不消耗大模型额度。</p>
+      <h3>岗位识别需要 API Key 吗？</h3>
+      <p>默认不需要。新增岗位里可以直接粘贴招聘页面文字，GoOffer 会在浏览器本地抽取公司、岗位、城市、薪资和标签。</p>
+      <p>如果你要上传截图识别，需要先绑定支持图片输入的模型，并勾选“这个模型支持图片识别”。这会调用你绑定的 API，但准确率会明显高于浏览器端文字识别。</p>
     </section>
   `;
   return modalShell("如何获取 API 设置", body, `${button("返回设置", "open-ai-settings", "surface")} ${button("关闭", "close-modal")}`);
@@ -1916,7 +1918,8 @@ function renderJobModal() {
         ${field("city", "城市", editing ? job.city : "", "例如 上海")}
         ${moneyField("salary", "薪资范围", editing ? job.salary : "", "35 - 50", "k")}
         ${textareaField("description", "岗位要求", editing ? job.description : "", "补充岗位职责、要求或备注")}
-      `, editing ? "" : jobRecognitionButton(), editing ? "" : "data-job-recognition")}
+        ${editing ? "" : jobRecognitionPanel()}
+      `, "", editing ? "" : "data-job-recognition")}
       ${formSection("投递信息", "记录当前阶段、优先级、来源和可检索标签。", "track_changes", `
         ${selectField("status", "投递状态", statuses, editing ? job.status : "待投递")}
         ${selectField("priority", "优先级", priorities, editing ? job.priority : "中")}
@@ -1963,12 +1966,29 @@ function renderDeleteJobModal() {
   );
 }
 
-function jobRecognitionButton() {
+function jobRecognitionPanel() {
   return `
-    <button class="section-action-button job-upload-button" type="button" data-action="pick-job-image">
-      <span class="material-symbols-outlined" aria-hidden="true">image_search</span>
-      截图识别
-    </button>
+    <section class="job-recognition-panel full">
+      <div class="job-recognition-head">
+        <div>
+          <strong>快速识别岗位</strong>
+          <small>优先粘贴招聘页面文字；截图识别仅在已绑定支持图片的 AI 模型时使用。</small>
+        </div>
+      </div>
+      <textarea class="job-paste-textarea" data-job-paste-text placeholder="粘贴岗位文本，例如招聘页复制出来的公司、职位、城市、薪资、JD 描述..."></textarea>
+      <div class="job-recognition-actions">
+        <button class="section-action-button" type="button" data-action="recognize-job-text">
+          <span class="material-symbols-outlined" aria-hidden="true">auto_fix_high</span>
+          粘贴文本识别
+        </button>
+        <button class="section-action-button job-upload-button" type="button" data-action="pick-job-image">
+          <span class="material-symbols-outlined" aria-hidden="true">image_search</span>
+          AI 识图
+        </button>
+      </div>
+      <p class="recognition-status" data-recognition-status>粘贴文本不会调用 API；AI 识图会使用你绑定的支持图片模型。</p>
+      <div class="recognition-preview" data-recognition-preview></div>
+    </section>
     <input class="job-upload-input" type="file" accept="image/*" data-job-image-input>
   `;
 }
@@ -2156,6 +2176,15 @@ function field(name, label, value, placeholder) {
   `;
 }
 
+function checkboxField(name, label, checked = false) {
+  return `
+    <label class="checkbox-row field full">
+      <input type="checkbox" name="${name}" value="1" ${checked ? "checked" : ""}>
+      <span>${label}</span>
+    </label>
+  `;
+}
+
 function ratingSliderField(name, label, value, hint = "") {
   const safeValue = Math.min(5, Math.max(1, Number(value || 3)));
   return `
@@ -2294,7 +2323,7 @@ function detectTags(text) {
   rules.forEach(([tag, pattern]) => {
     if (pattern.test(text)) tags.push(tag);
   });
-  return tags.length ? tags : ["截图识别"];
+  return tags.length ? tags : ["文本识别"];
 }
 
 function looksLikeTitle(line) {
@@ -2326,7 +2355,7 @@ function extractJobPostingFromText(text) {
     salary_amount: salary.amount,
     salary_unit: salary.unit,
     salary_display: salary.display,
-    source: "本地 OCR",
+    source: "粘贴识别",
     priority: "中",
     status: "待投递",
     tags: detectTags(compactText),
@@ -2335,37 +2364,72 @@ function extractJobPostingFromText(text) {
   };
 }
 
-function loadTesseract() {
-  if (window.Tesseract) return Promise.resolve(window.Tesseract);
-  if (loadTesseract.promise) return loadTesseract.promise;
-  loadTesseract.promise = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-    script.onload = () => resolve(window.Tesseract);
-    script.onerror = () => reject(new Error("OCR 引擎加载失败。"));
-    document.head.appendChild(script);
-  });
-  return loadTesseract.promise;
+function fillRecognizedJob(form, recognized) {
+  Object.entries({
+    company: recognized.company,
+    title: recognized.title,
+    city: recognized.city,
+    salary: recognized.salary_display || formatMoneyValue(recognized.salary_amount, recognized.salary_unit || "k"),
+    source: recognized.source || "识别填入",
+    priority: normalizePriority(recognized.priority),
+    status: normalizeJobStatus(recognized.status),
+    tags: Array.isArray(recognized.tags) ? recognized.tags.join("，") : recognized.tags,
+    description: recognized.description
+  }).forEach(([name, value]) => setFormValue(form, name, value || ""));
 }
 
-async function recognizeJobPostingWithLocalOcr(file, onProgress) {
-  const Tesseract = await loadTesseract();
-  const result = await Tesseract.recognize(file, "chi_sim+eng", {
-    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
-    corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js",
-    langPath: "https://tessdata.projectnaptha.com/4.0.0",
-    logger: (event) => {
-      if (event.status === "recognizing text" && typeof onProgress === "function") {
-        onProgress(Math.round((event.progress || 0) * 100));
-      }
-    }
-  });
-  const text = result?.data?.text || "";
-  const extracted = extractJobPostingFromText(text);
-  if (!extracted.company && !extracted.title && !extracted.salary_amount) {
-    throw new Error("OCR 未识别出足够的岗位信息，请换一张更清晰的截图或手动填写。");
+function handleJobTextRecognition(button) {
+  const section = button.closest("[data-job-recognition]");
+  const status = section?.querySelector("[data-recognition-status]");
+  const textarea = section?.querySelector("[data-job-paste-text]");
+  const form = document.getElementById("job-form");
+  if (!section || !textarea || !form) return;
+
+  const text = textarea.value.trim();
+  if (text.length < 12) {
+    if (status) status.textContent = "请先粘贴完整一点的岗位文本。";
+    showToast("请先粘贴岗位文本");
+    renderToast();
+    return;
   }
-  return extracted;
+
+  const recognized = extractJobPostingFromText(text);
+  if (!recognized.company && !recognized.title && !recognized.salary_amount) {
+    if (status) status.textContent = "未抽取到公司、岗位或薪资，请补充文本后再试。";
+    showToast("文本识别信息不足");
+    renderToast();
+    return;
+  }
+
+  fillRecognizedJob(form, recognized);
+  section.classList.add("is-complete");
+  if (status) status.textContent = "已根据粘贴文本填入，可继续修改。";
+  showToast("岗位文本已填入");
+  renderToast();
+}
+
+async function recognizeRemoteJobImage(file) {
+  if (!isRemoteReady()) {
+    throw new Error("AI 识图需要先登录账号。");
+  }
+  const provider = state.aiProvider || await loadAiProvider();
+  if (!provider) {
+    throw new Error("请先在 AI API 设置中绑定模型。");
+  }
+  if (!provider.supports_vision) {
+    throw new Error("当前模型未开启图片识别，请在 AI API 设置中勾选支持图片识别。");
+  }
+
+  const formData = new FormData();
+  formData.append("image", file);
+  const response = await fetch("/api/jobs/recognize", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${state.auth.session.access_token}`
+    },
+    body: formData
+  });
+  return readJsonResponse(response, "AI 识图失败。");
 }
 
 function handleJobImageUpload(input) {
@@ -2380,7 +2444,7 @@ function handleJobImageUpload(input) {
 
   section.classList.remove("is-complete");
   section.classList.add("is-loading");
-  if (status) status.textContent = "正在本地 OCR 识别...";
+  if (status) status.textContent = "正在调用 AI 识图...";
 
   if (preview) {
     preview.innerHTML = "";
@@ -2402,31 +2466,19 @@ function handleJobImageUpload(input) {
   handleJobImageUpload.token = token;
   handleJobImageUpload.timer = window.setTimeout(async () => {
     try {
-      const recognized = await recognizeJobPostingWithLocalOcr(file, (progress) => {
-        if (status) status.textContent = `正在本地 OCR 识别...${progress}%`;
-      });
+      const recognized = await recognizeRemoteJobImage(file);
       if (handleJobImageUpload.token !== token) return;
 
-      Object.entries({
-        company: recognized.company,
-        title: recognized.title,
-        city: recognized.city,
-        salary: recognized.salary_display || formatMoneyValue(recognized.salary_amount, recognized.salary_unit || "k"),
-        source: recognized.source || "截图识别",
-        priority: normalizePriority(recognized.priority),
-        status: normalizeJobStatus(recognized.status),
-        tags: Array.isArray(recognized.tags) ? recognized.tags.join("，") : recognized.tags,
-        description: recognized.description
-      }).forEach(([name, value]) => setFormValue(form, name, value || ""));
+      fillRecognizedJob(form, { ...recognized, source: recognized.source || "AI 识图" });
       section.classList.remove("is-loading");
       section.classList.add("is-complete");
       if (status) status.textContent = "已填入，可继续修改";
-      showToast("本地 OCR 已填入岗位信息");
+      showToast("AI 识图已填入岗位信息");
       renderToast();
     } catch (error) {
       section.classList.remove("is-loading");
       if (status) status.textContent = error instanceof Error ? error.message : "截图识别失败";
-      showToast("OCR 识别失败，请换清晰截图或手动填写");
+      showToast("AI 识图失败，请检查登录和模型设置");
       renderToast();
     }
   }, 780);
@@ -3179,6 +3231,11 @@ document.addEventListener("click", (event) => {
 
   if (action === "pick-job-image") {
     actionEl.closest("[data-job-recognition]")?.querySelector("[data-job-image-input]")?.click();
+    return;
+  }
+
+  if (action === "recognize-job-text") {
+    handleJobTextRecognition(actionEl);
     return;
   }
 
