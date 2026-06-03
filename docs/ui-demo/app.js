@@ -289,7 +289,7 @@ const state = {
     priority: "全部",
     sort: "投递进度",
     view: "board",
-    funnel: true,
+    funnel: false,
     funnelStatuses: [...defaultFunnelStatuses]
   },
   funnelPanelOpen: false,
@@ -923,19 +923,19 @@ function pageHeader(title, description, actionHtml = "", eyebrow = "") {
 function renderShell(content) {
   const screenMeta = {
     dashboard: {
-      title: "Dashboard",
+      title: "求职主页",
       subtitle: "集中查看投递、面试和 Offer 状态"
     },
     jobs: {
-      title: "Jobs",
+      title: "岗位看板",
       subtitle: "筛选、排序并更新每个岗位的投递状态"
     },
     detail: {
-      title: "Job Detail",
+      title: "岗位详情",
       subtitle: "岗位详情、面试记录和总结沉淀在同一页"
     },
     offers: {
-      title: "Offer Comparison",
+      title: "Offer 对比",
       subtitle: "从薪资、成长、稳定性和偏好横向比较 Offer"
     }
   };
@@ -970,10 +970,10 @@ function renderShell(content) {
           </div>
         </div>
         <nav class="side-nav">
-          ${navItem("dashboard", "Dashboard", "dashboard")}
-          ${navItem("jobs", "Jobs", "work")}
-          ${navItem("detail", "Job Detail", "description")}
-          ${navItem("offers", "Offer Comparison", "balance")}
+          ${navItem("dashboard", "求职主页", "home")}
+          ${navItem("jobs", "岗位看板", "work")}
+          ${navItem("detail", "岗位详情", "description")}
+          ${navItem("offers", "Offer 对比", "balance")}
         </nav>
         <div class="sidebar-bottom">
           <button class="icon-button sidebar-toggle" type="button" data-action="toggle-sidebar" aria-label="${sidebarMenu.label}" title="${sidebarMenu.label}" aria-expanded="${!state.sidebarCollapsed}">
@@ -1077,7 +1077,7 @@ function renderDashboard() {
     </section>
 
     <section class="grid bento-grid">
-      <article class="card card-pad panel-list dashboard-funnel-card">
+      <article class="card card-pad panel-list dashboard-funnel-card full-span">
         <div class="section-head">
           <h2>投递漏斗</h2>
           <span class="text-link" data-action="nav" data-screen="jobs">查看全部</span>
@@ -1096,7 +1096,7 @@ function renderDashboard() {
         </div>
       </article>
 
-      <article class="card card-pad full-span dashboard-review-card" id="follow-up-section">
+      <article class="card card-pad panel-list dashboard-review-card" id="follow-up-section">
         <div class="section-head">
           <h2>最近一次面试复盘</h2>
           <span class="badge ai-chip">复盘</span>
@@ -1125,7 +1125,7 @@ function renderDashboardFunnel() {
         const items = jobsByStatus(jobs, status);
         const title = status === "已拿Offer" ? "offer" : meta.title;
         return `
-          <section class="mini-funnel-step ${statusTone[status]}">
+          <section class="mini-funnel-step ${statusTone[status]}" data-funnel-drop-status="${status}">
             <div class="mini-funnel-head">
               <span class="material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
               <strong>${title}</strong>
@@ -1133,7 +1133,7 @@ function renderDashboardFunnel() {
             </div>
             <div class="mini-funnel-jobs">
               ${items.map((job) => `
-                <button type="button" data-action="select-job" data-job-id="${job.id}">
+                <button type="button" draggable="true" data-action="select-job" data-job-id="${job.id}" data-drag-job-id="${job.id}">
                   <span>
                     <strong>${escapeHtml(job.company)}</strong>
                     <small>${escapeHtml(job.title)}</small>
@@ -1976,24 +1976,24 @@ function jobRecognitionPanel() {
       <div class="job-recognition-head">
         <div>
           <strong>快速识别岗位</strong>
-          <small>粘贴招聘链接或页面文字，系统会自动选择链接抓取或文本抽取。</small>
+          <small>粘贴招聘页面复制出来的正文，或上传截图交给你的 AI 视觉模型识别。</small>
         </div>
       </div>
       <label class="job-recognition-input">
-        <span class="material-symbols-outlined" aria-hidden="true">travel_explore</span>
-        <textarea class="job-paste-textarea" data-job-recognition-input placeholder="粘贴招聘链接，或直接粘贴招聘页文字。例如：https://... / 公司、职位、城市、薪资、JD 描述..."></textarea>
+        <span class="material-symbols-outlined" aria-hidden="true">article</span>
+        <textarea class="job-paste-textarea" data-job-recognition-input placeholder="粘贴招聘页正文，例如公司、职位、城市、薪资、岗位职责、任职要求、JD 描述..."></textarea>
       </label>
       <div class="job-recognition-actions">
-        <button class="section-action-button" type="button" data-action="recognize-job-input">
+        <button class="section-action-button" type="button" data-action="recognize-job-text">
           <span class="material-symbols-outlined" aria-hidden="true">auto_fix_high</span>
-          智能识别
+          文字识别
         </button>
         <button class="section-action-button job-upload-button" type="button" data-action="pick-job-image">
           <span class="material-symbols-outlined" aria-hidden="true">image_search</span>
           AI 识图
         </button>
       </div>
-      <p class="recognition-status" data-recognition-status>链接会优先读取公开岗位数据；已绑定 AI 时会辅助抽取。普通粘贴文本不调用 API。</p>
+      <p class="recognition-status" data-recognition-status>文字识别不调用 API；AI 识图会使用你绑定的支持图片模型。</p>
       <div class="recognition-preview" data-recognition-preview></div>
     </section>
     <input class="job-upload-input" type="file" accept="image/*" data-job-image-input>
@@ -2190,7 +2190,7 @@ function checkboxField(name, label, checked = false) {
       <span class="toggle-track" aria-hidden="true"><span></span></span>
       <span class="vision-toggle-copy">
         <strong>${label}</strong>
-        <small>开启后，AI 识图会调用你绑定的视觉模型；粘贴文本不消耗 API，链接识别可能使用文本模型提升准确率。</small>
+        <small>开启后，AI 识图会调用你绑定的视觉模型；粘贴文本识别不消耗 API。</small>
       </span>
     </label>
   `;
@@ -2478,28 +2478,13 @@ function fillRecognizedJob(form, recognized) {
   }).forEach(([name, value]) => setFormValue(form, name, value || ""));
 }
 
-function extractFirstUrl(value) {
-  const matched = String(value || "").match(/https?:\/\/[^\s<>"'，。；、]+/i);
-  return matched ? matched[0] : "";
+function setRecognitionButtonLoading(button, loading) {
+  if (!button) return;
+  button.classList.toggle("is-loading", loading);
+  button.disabled = loading;
 }
 
-async function recognizeRemoteJobLink(url) {
-  if (!isRemoteReady()) {
-    throw new Error("链接识别需要先登录账号。");
-  }
-
-  const response = await fetch("/api/jobs/recognize-link", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${state.auth.session.access_token}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({ url })
-  });
-  return readJsonResponse(response, "链接识别失败。");
-}
-
-async function handleJobSmartRecognition(button) {
+function handleJobTextRecognition(button) {
   const section = button.closest("[data-job-recognition]");
   const status = section?.querySelector("[data-recognition-status]");
   const textarea = section?.querySelector("[data-job-recognition-input]");
@@ -2508,36 +2493,34 @@ async function handleJobSmartRecognition(button) {
 
   const input = textarea.value.trim();
   if (input.length < 12) {
-    if (status) status.textContent = "请先粘贴招聘链接或完整一点的岗位文本。";
-    showToast("请先粘贴招聘链接或岗位文本");
+    if (status) status.textContent = "请先粘贴完整一点的岗位文本。";
+    showToast("请先粘贴岗位文本");
     renderToast();
     return;
   }
 
   section.classList.remove("is-complete");
-  section.classList.add("is-loading");
+  setRecognitionButtonLoading(button, true);
+  if (status) status.textContent = "正在识别粘贴文本...";
 
-  try {
-    const url = extractFirstUrl(input);
-    const recognized = url
-      ? await recognizeRemoteJobLink(url)
-      : extractJobPostingFromText(input);
+  window.setTimeout(() => {
+    const recognized = extractJobPostingFromText(input);
 
     if (!recognized.company && !recognized.title && !recognized.salary_amount) {
-      throw new Error(url ? "页面内容不足，建议复制招聘页正文后再试。" : "未抽取到公司、岗位或薪资，请补充文本后再试。");
+      setRecognitionButtonLoading(button, false);
+      if (status) status.textContent = "未抽取到公司、岗位或薪资，请补充文本后再试。";
+      showToast("文本识别信息不足");
+      renderToast();
+      return;
     }
 
-    fillRecognizedJob(form, url ? { ...recognized, source: recognized.source || url } : recognized);
-    section.classList.remove("is-loading");
+    fillRecognizedJob(form, recognized);
+    setRecognitionButtonLoading(button, false);
     section.classList.add("is-complete");
-    if (status) status.textContent = url ? "已根据招聘链接填入，可继续修改。" : "已根据粘贴文本填入，可继续修改。";
-    showToast(url ? "招聘链接已识别" : "岗位文本已填入");
-  } catch (error) {
-    section.classList.remove("is-loading");
-    if (status) status.textContent = error instanceof Error ? error.message : "智能识别失败";
-    showToast("智能识别失败");
-  }
-  renderToast();
+    if (status) status.textContent = "已根据粘贴文本填入，可继续修改。";
+    showToast("岗位文本已填入");
+    renderToast();
+  }, 260);
 }
 
 async function recognizeRemoteJobImage(file) {
@@ -2571,11 +2554,12 @@ function handleJobImageUpload(input) {
   const section = input.closest("[data-job-recognition]");
   const status = section?.querySelector("[data-recognition-status]");
   const preview = section?.querySelector("[data-recognition-preview]");
+  const uploadButton = section?.querySelector("[data-action='pick-job-image']");
   const form = document.getElementById("job-form");
   if (!section || !form) return;
 
   section.classList.remove("is-complete");
-  section.classList.add("is-loading");
+  setRecognitionButtonLoading(uploadButton, true);
   if (status) status.textContent = "正在调用 AI 识图...";
 
   if (preview) {
@@ -2602,13 +2586,13 @@ function handleJobImageUpload(input) {
       if (handleJobImageUpload.token !== token) return;
 
       fillRecognizedJob(form, { ...recognized, source: recognized.source || "AI 识图" });
-      section.classList.remove("is-loading");
+      setRecognitionButtonLoading(uploadButton, false);
       section.classList.add("is-complete");
       if (status) status.textContent = "已填入，可继续修改";
       showToast("AI 识图已填入岗位信息");
       renderToast();
     } catch (error) {
-      section.classList.remove("is-loading");
+      setRecognitionButtonLoading(uploadButton, false);
       if (status) status.textContent = error instanceof Error ? error.message : "截图识别失败";
       showToast("AI 识图失败，请检查登录和模型设置");
       renderToast();
@@ -3176,9 +3160,9 @@ function sidebarMenuMeta() {
 function navUpMeta() {
   const map = {
     dashboard: { target: "", icon: "dashboard", label: "已在最高层级" },
-    jobs: { target: "dashboard", icon: "arrow_back", label: "返回 Dashboard" },
-    detail: { target: "jobs", icon: "arrow_back", label: "返回 Jobs" },
-    offers: { target: "jobs", icon: "arrow_back", label: "返回 Jobs" }
+    jobs: { target: "dashboard", icon: "arrow_back", label: "返回求职主页" },
+    detail: { target: "jobs", icon: "arrow_back", label: "返回岗位看板" },
+    offers: { target: "jobs", icon: "arrow_back", label: "返回岗位看板" }
   };
   return map[state.screen] || map.dashboard;
 }
@@ -3366,8 +3350,8 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "recognize-job-input") {
-    void handleJobSmartRecognition(actionEl);
+  if (action === "recognize-job-text") {
+    handleJobTextRecognition(actionEl);
     return;
   }
 
@@ -3476,7 +3460,8 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "filter-jobs") {
-    state.filters.status = actionEl.dataset.filterStatus || "全部";
+    const nextStatus = actionEl.dataset.filterStatus || "全部";
+    state.filters.status = state.filters.status === nextStatus ? "全部" : nextStatus;
     state.filters.city = "全部";
     state.filters.priority = "全部";
     state.filters.query = "";

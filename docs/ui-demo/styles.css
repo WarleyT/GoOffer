@@ -752,13 +752,13 @@ small {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
-  min-height: 98px;
+  z-index: 60;
+  min-height: 82px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px var(--page-margin) 24px;
+  padding: 12px var(--page-margin) 16px;
   background: transparent;
   transition: min-height 220ms ease, padding 220ms ease, box-shadow 220ms ease, background 220ms ease;
   isolation: isolate;
@@ -773,8 +773,8 @@ small {
   background: linear-gradient(
     180deg,
     rgba(251, 249, 245, 1) 0%,
-    rgba(251, 249, 245, 1) 58%,
-    rgba(251, 249, 245, 0.72) 82%,
+    rgba(251, 249, 245, 1) 48%,
+    rgba(251, 249, 245, 0.66) 72%,
     rgba(251, 249, 245, 0) 100%
   );
   backdrop-filter: blur(8px);
@@ -788,14 +788,14 @@ small {
 
 .topbar-title {
   color: var(--on-surface);
-  font-size: 32px;
-  line-height: 40px;
+  font-size: 30px;
+  line-height: 36px;
   font-weight: 800;
 }
 
 .topbar-heading {
   display: grid;
-  gap: 8px;
+  gap: 4px;
 }
 
 .topbar-subtitle {
@@ -810,9 +810,9 @@ small {
 }
 
 body.is-scrolled .topbar {
-  min-height: 72px;
+  min-height: 60px;
   padding-top: 10px;
-  padding-bottom: 18px;
+  padding-bottom: 10px;
 }
 
 body.is-scrolled .topbar-subtitle {
@@ -1140,25 +1140,34 @@ body.is-scrolled .topbar-subtitle {
 }
 
 .dashboard-funnel-card {
+  grid-column: 1 / -1;
+  min-height: 326px;
   overflow: hidden;
 }
 
 .mini-funnel {
   display: grid;
-  grid-template-columns: repeat(6, minmax(96px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 12px;
 }
 
 .mini-funnel-step {
   min-width: 0;
-  min-height: 202px;
+  min-height: 244px;
   display: grid;
   align-content: start;
-  gap: 7px;
-  padding: 9px;
+  gap: 10px;
+  padding: 14px;
   border-radius: var(--radius-md);
   background: var(--surface-low);
   border-top: 4px solid var(--outline-variant);
+  transition: transform 240ms var(--motion-pop), box-shadow 200ms var(--motion-soft), background-color 200ms var(--motion-soft);
+}
+
+.mini-funnel-step.drag-over {
+  background: color-mix(in srgb, var(--primary-container) 20%, var(--surface-low));
+  transform: translateY(-3px) scale(1.01);
+  box-shadow: var(--shadow-medium);
 }
 
 .mini-funnel-step.applied {
@@ -1218,7 +1227,7 @@ body.is-scrolled .topbar-subtitle {
 .mini-funnel-jobs {
   display: grid;
   gap: 5px;
-  max-height: 151px;
+  max-height: 188px;
   overflow-y: auto;
   padding-right: 2px;
   scrollbar-width: thin;
@@ -1247,6 +1256,18 @@ body.is-scrolled .topbar-subtitle {
   text-align: left;
   cursor: pointer;
   transition: transform 220ms var(--motion-pop), box-shadow 180ms var(--motion-soft);
+}
+
+.mini-funnel-jobs button[draggable="true"] {
+  cursor: var(--cursor-grab-outline);
+}
+
+.mini-funnel-jobs button[draggable="true"]:active {
+  cursor: var(--cursor-grabbing-outline);
+}
+
+.mini-funnel-jobs button.is-dragging {
+  opacity: 0.46;
 }
 
 .mini-funnel-jobs button:hover {
@@ -2990,18 +3011,22 @@ body.is-scrolled .topbar-subtitle {
   font-weight: 700;
 }
 
-.form-section[data-job-recognition].is-loading,
 .form-section[data-job-recognition].is-complete {
   border-color: var(--primary-fixed-dim);
 }
 
-.form-section[data-job-recognition].is-loading .section-action-button::after {
+.section-action-button.is-loading::after {
   content: "";
   width: 6px;
   height: 6px;
   border-radius: 999px;
   background: currentColor;
   animation: pulse-dot 760ms var(--motion-soft) infinite alternate;
+}
+
+.section-action-button.is-loading {
+  cursor: wait;
+  opacity: 0.78;
 }
 
 .form-section-grid {
