@@ -833,6 +833,86 @@ body.is-scrolled .topbar-subtitle {
   padding: 0 var(--page-margin) 56px;
 }
 
+.shared-mode {
+  overflow-x: hidden;
+}
+
+.shared-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 56px);
+}
+
+.shared-card {
+  width: min(960px, 100%);
+  display: grid;
+  gap: 28px;
+}
+
+.shared-head,
+.shared-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shared-hero {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 26px;
+  align-items: start;
+}
+
+.shared-hero h1 {
+  color: var(--on-surface);
+  font-size: clamp(32px, 5vw, 58px);
+  line-height: 1.06;
+  font-weight: 950;
+}
+
+.shared-meta {
+  margin: 12px 0;
+  color: var(--on-surface-variant);
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.shared-section {
+  display: grid;
+  gap: 12px;
+}
+
+.shared-section h2 {
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.shared-description {
+  max-width: 100%;
+  color: var(--on-surface-variant);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.72;
+  white-space: pre-wrap;
+}
+
+.shared-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 20px;
+  border-radius: var(--radius-md);
+  background: var(--surface-low);
+}
+
+.shared-footer {
+  color: var(--outline);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .page-actions {
   display: flex;
   justify-content: flex-end;
@@ -4158,6 +4238,38 @@ body.is-scrolled .topbar-subtitle {
 }
 
 @media (max-width: 860px) {
+  .shared-page {
+    align-items: start;
+    padding: 14px;
+  }
+
+  .shared-card {
+    gap: 22px;
+    border-radius: 28px;
+  }
+
+  .shared-head,
+  .shared-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shared-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .shared-hero .logo-tile.large {
+    width: 88px;
+    height: 88px;
+    font-size: 24px;
+  }
+
+  .shared-facts {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 16px;
+  }
+
   html,
   body,
   .app-shell,

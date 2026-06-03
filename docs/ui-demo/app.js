@@ -332,7 +332,9 @@ const state = {
   },
   aiProvider: null,
   expandedJobDescriptions: new Set(),
-  quickEditField: null
+  quickEditField: null,
+  sharedJob: null,
+  shareInvalid: false
 };
 
 const app = document.getElementById("app");
@@ -505,10 +507,82 @@ function activeJob() {
   return jobs.find((job) => job.id === state.activeJobId) || jobs[0];
 }
 
+function toBase64Url(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function fromBase64Url(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function compactJobSnapshot(job) {
+  return {
+    v: 1,
+    company: String(job.company || "").slice(0, 80),
+    title: String(job.title || "").slice(0, 100),
+    city: String(job.city || "").slice(0, 48),
+    salary: String(job.salary || "面议").slice(0, 48),
+    source: String(job.source || "").slice(0, 120),
+    status: normalizeJobStatus(job.status),
+    priority: normalizePriority(job.priority),
+    logo: String(job.logo || "GO").slice(0, 4),
+    logoTone: job.logoTone || "logo-yellow",
+    tags: Array.isArray(job.tags) ? job.tags.slice(0, 8).map((tag) => String(tag).slice(0, 24)) : [],
+    description: String(job.description || "暂未补充岗位详情。").slice(0, 1600),
+    nextInterview: String(job.nextInterview || "暂无").slice(0, 60),
+    sharedAt: new Date().toISOString()
+  };
+}
+
+function encodeJobSnapshot(job) {
+  return toBase64Url(JSON.stringify(compactJobSnapshot(job)));
+}
+
+function decodeJobSnapshot(value) {
+  try {
+    const payload = JSON.parse(fromBase64Url(value));
+    if (!payload || typeof payload !== "object") return null;
+    return {
+      v: 1,
+      company: String(payload.company || "未命名公司"),
+      title: String(payload.title || "未命名岗位"),
+      city: String(payload.city || "未填写"),
+      salary: String(payload.salary || "面议"),
+      source: String(payload.source || "未填写"),
+      status: normalizeJobStatus(payload.status),
+      priority: normalizePriority(payload.priority),
+      logo: String(payload.logo || "GO").slice(0, 4),
+      logoTone: String(payload.logoTone || "logo-yellow"),
+      tags: Array.isArray(payload.tags) ? payload.tags.map(String).slice(0, 8) : [],
+      description: String(payload.description || "暂未补充岗位详情。"),
+      nextInterview: String(payload.nextInterview || "暂无"),
+      sharedAt: String(payload.sharedAt || "")
+    };
+  } catch {
+    return null;
+  }
+}
+
 function applyUrlState() {
   const params = new URLSearchParams(window.location.search);
+  const shared = params.get("share");
   const screen = params.get("screen");
   const jobId = params.get("job");
+
+  if (shared) {
+    state.sharedJob = decodeJobSnapshot(shared);
+    state.shareInvalid = !state.sharedJob;
+    return;
+  }
 
   if (jobId && jobs.some((job) => job.id === jobId)) {
     state.activeJobId = jobId;
@@ -523,12 +597,8 @@ function applyUrlState() {
 
 function detailShareUrl(job = activeJob()) {
   const url = new URL(window.location.href);
-  url.searchParams.set("screen", "detail");
-  if (job?.id) {
-    url.searchParams.set("job", job.id);
-  } else {
-    url.searchParams.delete("job");
-  }
+  url.search = "";
+  url.searchParams.set("share", encodeJobSnapshot(job));
   url.hash = "";
   return url.toString();
 }
@@ -552,6 +622,81 @@ async function copyText(text) {
   return true;
 }
 
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 4) {
+  const chars = Array.from(String(text || ""));
+  let line = "";
+  let lineCount = 0;
+  for (const char of chars) {
+    const testLine = line + char;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      lineCount += 1;
+      if (lineCount >= maxLines) {
+        ctx.fillText(`${line.slice(0, Math.max(0, line.length - 1))}…`, x, y);
+        return y + lineHeight;
+      }
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      line = char;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) {
+    ctx.fillText(line, x, y);
+    y += lineHeight;
+  }
+  return y;
+}
+
+async function copyShareCardImage(job, url) {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") return false;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 720;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+
+  ctx.fillStyle = "#fbf9f5";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#ffcf18";
+  ctx.beginPath();
+  ctx.roundRect(56, 54, 160, 160, 48);
+  ctx.fill();
+  ctx.fillStyle = "#2b2926";
+  ctx.font = "900 42px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(job.logo || String(job.company || "GO").slice(0, 2).toUpperCase(), 136, 148);
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#171715";
+  ctx.font = "900 50px Arial, sans-serif";
+  wrapCanvasText(ctx, `${job.company} · ${job.title}`, 252, 104, 760, 62, 2);
+
+  ctx.fillStyle = "#5f5a4c";
+  ctx.font = "800 30px Arial, sans-serif";
+  ctx.fillText(`${job.city || "未填写"} · ${job.salary || "面议"} · ${statusMeta[job.status]?.title || job.status}`, 252, 244);
+
+  ctx.fillStyle = "#2b2926";
+  ctx.font = "700 30px Arial, sans-serif";
+  wrapCanvasText(ctx, job.description || "暂未补充岗位详情。", 80, 350, 920, 46, 4);
+
+  ctx.fillStyle = "#7a6a00";
+  ctx.font = "900 28px Arial, sans-serif";
+  ctx.fillText("GoOffer 岗位分享", 80, 650);
+  ctx.fillStyle = "#8b8577";
+  ctx.font = "700 22px Arial, sans-serif";
+  ctx.fillText(url.slice(0, 82), 80, 686);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
+  if (!blob) return false;
+  await navigator.clipboard.write([new ClipboardItem({
+    "image/png": blob,
+    "text/plain": new Blob([url], { type: "text/plain" })
+  })]);
+  return true;
+}
+
 async function shareDetailLink() {
   const job = activeJob();
   if (!job) {
@@ -561,9 +706,13 @@ async function shareDetailLink() {
   }
 
   const url = detailShareUrl(job);
+  let imageCopied = false;
   try {
-    await copyText(url);
-    showToast("岗位详情链接已复制");
+    imageCopied = await copyShareCardImage(compactJobSnapshot(job), url).catch(() => false);
+    if (!imageCopied) {
+      await copyText(url);
+    }
+    showToast(imageCopied ? "分享卡片和静态链接已复制" : "静态岗位分享链接已复制");
   } catch {
     showToast(`复制失败，请手动复制：${url}`);
   }
@@ -1787,6 +1936,60 @@ function renderDetailSwitcher() {
         <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
       </button>
     </nav>
+  `;
+}
+
+function renderSharedJobPage(job) {
+  if (!job) {
+    return `
+      <main class="shared-page">
+        <section class="shared-card card card-pad">
+          <div class="brand-name brand-logo" aria-label="GoOffer">
+            <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
+          </div>
+          <h1>分享链接不可用</h1>
+          <p class="description">这条岗位分享链接缺少必要信息，可能复制不完整。请让分享者重新点击“分享”。</p>
+          <a class="button" href="${escapeHtml(window.location.origin + window.location.pathname)}">打开 GoOffer</a>
+        </section>
+      </main>
+    `;
+  }
+
+  return `
+    <main class="shared-page">
+      <section class="shared-card card card-pad">
+        <header class="shared-head">
+          <div class="brand-name brand-logo" aria-label="GoOffer">
+            <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
+          </div>
+          <span class="badge todo">静态岗位分享</span>
+        </header>
+        <div class="shared-hero">
+          <span class="logo-tile large ${escapeHtml(job.logoTone)}">${escapeHtml(job.logo || String(job.company).slice(0, 2).toUpperCase())}</span>
+          <div>
+            <h1>${escapeHtml(job.company)} · ${escapeHtml(job.title)}</h1>
+            <p class="shared-meta">${escapeHtml(job.city)} · ${escapeHtml(job.salary)} · ${escapeHtml(statusMeta[job.status]?.title || job.status)}</p>
+            <div class="tag-row">
+              ${(job.tags || []).map((tag) => `<span class="badge todo">${escapeHtml(tag)}</span>`).join("")}
+            </div>
+          </div>
+        </div>
+        <section class="shared-section">
+          <h2>岗位详情</h2>
+          <p class="shared-description">${escapeHtml(job.description || "暂未补充岗位详情。")}</p>
+        </section>
+        <section class="shared-facts">
+          ${quickItem("location_on", "城市", job.city)}
+          ${quickItem("payments", "薪资范围", job.salary)}
+          ${quickItem("campaign", "招聘渠道", job.source)}
+          ${quickItem("event", "下一次面试", job.nextInterview)}
+        </section>
+        <footer class="shared-footer">
+          <span>由 GoOffer 生成，打开无需登录。</span>
+          <a class="button" href="${escapeHtml(window.location.origin + window.location.pathname)}">打开 GoOffer</a>
+        </footer>
+      </section>
+    </main>
   `;
 }
 
@@ -3593,6 +3796,16 @@ function render(options = {}) {
     return;
   }
 
+  if (state.sharedJob || state.shareInvalid) {
+    app.innerHTML = renderSharedJobPage(state.sharedJob);
+    modalRoot.innerHTML = "";
+    renderToast();
+    document.body.classList.remove("modal-open");
+    document.body.classList.add("shared-mode");
+    return;
+  }
+  document.body.classList.remove("shared-mode");
+
   const screenMap = {
     dashboard: renderDashboard,
     jobs: renderJobs,
@@ -4234,7 +4447,7 @@ async function initApp() {
   } finally {
     state.booting = false;
     applyUrlState();
-    if (!state.auth.configured) {
+    if (!state.auth.configured && !state.sharedJob && !state.shareInvalid) {
       showToast("Supabase 未配置，当前为本地 demo 模式");
     }
     render();
