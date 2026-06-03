@@ -3787,6 +3787,15 @@ body.is-scrolled .topbar-subtitle {
     box-shadow: var(--shadow-soft);
   }
 
+  .mobile-account-button .mobile-avatar {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    min-height: 32px;
+    line-height: 32px;
+    font-size: 11px;
+  }
+
   .mobile-account-popover {
     position: fixed;
     top: 58px;
@@ -3825,7 +3834,6 @@ body.is-scrolled .topbar-subtitle {
   .detail-layout,
   .decision-grid,
   .jobs-grid,
-  .metric-grid,
   .offers-grid {
     width: 100%;
     max-width: 100%;
@@ -3840,10 +3848,17 @@ body.is-scrolled .topbar-subtitle {
   }
 
   .jobs-grid,
-  .metric-grid,
   .form-grid,
   .form-section-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metric-grid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
   }
 
   .metric-card,
@@ -3857,44 +3872,75 @@ body.is-scrolled .topbar-subtitle {
   }
 
   .metric-card {
-    min-height: 132px;
-    padding: 18px;
+    min-height: 104px;
+    align-content: start;
+    gap: 6px;
+    padding: 14px;
   }
 
   .metric-value {
-    font-size: 34px;
-    line-height: 38px;
+    font-size: 32px;
+    line-height: 34px;
+  }
+
+  .metric-label {
+    font-size: 12px;
+  }
+
+  .metric-line {
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .metric-note {
+    padding-bottom: 3px;
+    font-size: 11px;
   }
 
   .toolbar {
     position: relative;
     z-index: 15;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
     gap: 8px;
     align-items: start;
     margin-bottom: 14px;
   }
 
   .search-control {
-    grid-column: 1 / -1;
+    grid-column: 1 / 4;
+    grid-row: 1;
     height: 44px;
     padding: 0 14px;
   }
 
   .toolbar-select {
+    grid-row: 2;
     height: 42px;
     min-width: 0;
   }
 
+  .city-filter {
+    grid-column: 1;
+  }
+
+  .priority-filter {
+    grid-column: 2;
+  }
+
+  .sort-filter {
+    grid-column: 3;
+  }
+
   .custom-select-trigger {
-    padding: 0 34px 0 12px;
-    font-size: 13px;
+    gap: 4px;
+    padding: 0 24px 0 8px;
+    font-size: 12px;
   }
 
   .select-arrow {
-    right: 10px;
-    font-size: 18px;
+    right: 7px;
+    font-size: 16px;
   }
 
   .custom-select-menu {
@@ -3902,17 +3948,17 @@ body.is-scrolled .topbar-subtitle {
   }
 
   .jobs-view-tools {
-    grid-column: 2;
-    grid-row: 2 / span 2;
+    grid-column: 4;
+    grid-row: 1;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 4px;
   }
 
   .view-switch button,
   .funnel-icon-button,
   .funnel-segment {
-    width: 42px;
-    min-width: 42px;
+    width: 38px;
+    min-width: 38px;
     height: 42px;
     min-height: 42px;
   }
@@ -4035,7 +4081,7 @@ body.is-scrolled .topbar-subtitle {
 
   .offers-grid {
     grid-auto-flow: column;
-    grid-auto-columns: minmax(280px, 86vw);
+    grid-auto-columns: minmax(228px, 68vw);
     grid-template-columns: none !important;
     margin-inline: -12px;
     padding-inline: 12px;
@@ -4047,6 +4093,52 @@ body.is-scrolled .topbar-subtitle {
   .offer-card,
   .offers-grid .add-card {
     scroll-snap-align: start;
+  }
+
+  .offer-card {
+    min-height: 0;
+    padding: 14px;
+    border-radius: 22px;
+  }
+
+  .offer-card .logo-tile.large {
+    width: 48px;
+    height: 48px;
+    font-size: 15px;
+  }
+
+  .offer-card h2 {
+    margin-top: 10px !important;
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .offer-meta {
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .offer-block {
+    margin-top: 8px;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .offer-block-value {
+    font-size: 18px;
+  }
+
+  .rating-bars {
+    gap: 4px;
+    margin-top: 7px;
+  }
+
+  .rating-bars span {
+    height: 6px;
+  }
+
+  .score-line {
+    display: none;
   }
 
   .detail-switcher {

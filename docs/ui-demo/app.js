@@ -1005,7 +1005,9 @@ function renderShell(content) {
           </div>
           <div class="topbar-actions">
             <button class="icon-button mobile-account-button mobile-only" type="button" data-action="toggle-account" aria-label="${state.auth.session ? "账号设置" : "登录账号"}" aria-haspopup="dialog" aria-expanded="${state.accountOpen}">
-              <span class="material-symbols-outlined" aria-hidden="true">${state.auth.session ? "account_circle" : "login"}</span>
+              ${state.auth.session
+                ? `<span class="avatar mobile-avatar">${escapeHtml(currentUserInitials())}</span>`
+                : `<span class="material-symbols-outlined" aria-hidden="true">person</span>`}
             </button>
             ${topbarActions[state.screen] || ""}
             <button class="icon-button topbar-notification" type="button" data-action="toast" data-message="提醒中心会在后续版本接入" aria-label="通知">
@@ -1429,7 +1431,7 @@ function selectControl(id, label, options, value) {
     label,
     options,
     value,
-    className: "toolbar-select",
+    className: `toolbar-select ${id}`,
     displayPrefix: label
   });
 }
@@ -1520,7 +1522,6 @@ function renderDetail() {
           ${quickItem("location_on", "城市", job.city)}
           ${quickItem("payments", "薪资范围", job.salary)}
           ${sourceQuickItem(job.source)}
-          ${selectField("detailStatus", "当前状态", statuses, job.status, `data-job-status-select data-job-id="${job.id}"`)}
         </section>
 
         ${renderAiCard(job)}
@@ -1819,7 +1820,7 @@ function renderLoginModal() {
   const isSignup = state.auth.mode === "signup";
   const body = `
     <form class="form-grid job-edit-form" id="login-form">
-      ${formSection(isSignup ? "注册账号" : "登录账号", "登录后岗位、面试和 Offer 会同步到 Supabase，AI 功能也会使用你的个人 API Key。", "account_circle", `
+      ${formSection(isSignup ? "注册新账号" : "登录账号", "邮箱仅作为登录信息，暂不进行验证", isSignup ? "sentiment_satisfied" : "account_circle", `
         ${field("email", "邮箱", "", "you@example.com")}
         ${field("password", "密码", "", "至少 6 位")}
       `)}
