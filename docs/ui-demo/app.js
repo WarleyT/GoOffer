@@ -1976,21 +1976,24 @@ function jobRecognitionPanel() {
       <div class="job-recognition-head">
         <div>
           <strong>快速识别岗位</strong>
-          <small>优先粘贴招聘页面文字；截图识别仅在已绑定支持图片的 AI 模型时使用。</small>
+          <small>粘贴招聘链接或页面文字，系统会自动选择链接抓取或文本抽取。</small>
         </div>
       </div>
-      <textarea class="job-paste-textarea" data-job-paste-text placeholder="粘贴岗位文本，例如招聘页复制出来的公司、职位、城市、薪资、JD 描述..."></textarea>
+      <label class="job-recognition-input">
+        <span class="material-symbols-outlined" aria-hidden="true">travel_explore</span>
+        <textarea class="job-paste-textarea" data-job-recognition-input placeholder="粘贴招聘链接，或直接粘贴招聘页文字。例如：https://... / 公司、职位、城市、薪资、JD 描述..."></textarea>
+      </label>
       <div class="job-recognition-actions">
-        <button class="section-action-button" type="button" data-action="recognize-job-text">
+        <button class="section-action-button" type="button" data-action="recognize-job-input">
           <span class="material-symbols-outlined" aria-hidden="true">auto_fix_high</span>
-          粘贴文本识别
+          智能识别
         </button>
         <button class="section-action-button job-upload-button" type="button" data-action="pick-job-image">
           <span class="material-symbols-outlined" aria-hidden="true">image_search</span>
           AI 识图
         </button>
       </div>
-      <p class="recognition-status" data-recognition-status>粘贴文本不会调用 API；AI 识图会使用你绑定的支持图片模型。</p>
+      <p class="recognition-status" data-recognition-status>链接识别会读取公开招聘页；普通文本识别不调用 API；AI 识图会使用你绑定的支持图片模型。</p>
       <div class="recognition-preview" data-recognition-preview></div>
     </section>
     <input class="job-upload-input" type="file" accept="image/*" data-job-image-input>
@@ -2182,9 +2185,13 @@ function field(name, label, value, placeholder) {
 
 function checkboxField(name, label, checked = false) {
   return `
-    <label class="checkbox-row field full">
+    <label class="vision-toggle full">
       <input type="checkbox" name="${name}" value="1" ${checked ? "checked" : ""}>
-      <span>${label}</span>
+      <span class="toggle-track" aria-hidden="true"><span></span></span>
+      <span class="vision-toggle-copy">
+        <strong>${label}</strong>
+        <small>开启后，AI 识图会调用你绑定的视觉模型；粘贴文本和链接识别不消耗 API。</small>
+      </span>
     </label>
   `;
 }
@@ -2416,6 +2423,17 @@ function detectCompanyLine(lines, titleLine = "", labeledCompany = "") {
   return nearby || "";
 }
 
+function extractJobDescription(lines, excluded = new Set()) {
+  const start = lines.findIndex((line) => /岗位职责|工作职责|职位描述|职位详情|任职要求|岗位要求|工作内容|任职资格|职位要求/i.test(line));
+  const source = start >= 0 ? lines.slice(start) : lines;
+  return source
+    .filter((line) => !excluded.has(line))
+    .filter((line) => !/^查看|^申请|^投递|^分享|^举报|^收藏/.test(line))
+    .slice(0, start >= 0 ? 18 : 10)
+    .join("\n")
+    .slice(0, 1200);
+}
+
 function extractJobPostingFromText(text) {
   const lines = text.split(/\r?\n/).map(normalizeOcrLine).filter((line) => line.length > 1);
   const compactText = lines.join("\n");
@@ -2425,11 +2443,10 @@ function extractJobPostingFromText(text) {
   const titleLine = detectTitleLine(lines, labeledTitle);
   const companyLine = detectCompanyLine(lines, titleLine, labeledCompany);
   const city = detectCity(compactText);
-  const descriptionLines = lines
-    .filter((line) => !line.includes(salary.amount))
-    .filter((line) => line !== labeledCompany && line !== labeledTitle)
-    .filter((line) => line !== companyLine && line !== titleLine)
-    .slice(0, 8);
+  const excluded = new Set([labeledCompany, labeledTitle, companyLine, titleLine].filter(Boolean));
+  if (salary.amount) {
+    lines.filter((line) => line.includes(salary.amount)).forEach((line) => excluded.add(line));
+  }
 
   return {
     company: (labeledCompany || companyLine || "").slice(0, 48),
@@ -2442,7 +2459,7 @@ function extractJobPostingFromText(text) {
     priority: "中",
     status: "待投递",
     tags: detectTags(compactText),
-    description: descriptionLines.join("\n").slice(0, 900),
+    description: extractJobDescription(lines, excluded),
     confidence: text.length > 20 ? 0.76 : 0.35
   };
 }
@@ -2461,33 +2478,65 @@ function fillRecognizedJob(form, recognized) {
   }).forEach(([name, value]) => setFormValue(form, name, value || ""));
 }
 
-function handleJobTextRecognition(button) {
+function extractFirstUrl(value) {
+  const matched = String(value || "").match(/https?:\/\/[^\s<>"'，。；、]+/i);
+  return matched ? matched[0] : "";
+}
+
+async function recognizeRemoteJobLink(url) {
+  if (!isRemoteReady()) {
+    throw new Error("链接识别需要先登录账号。");
+  }
+
+  const response = await fetch("/api/jobs/recognize-link", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${state.auth.session.access_token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ url })
+  });
+  return readJsonResponse(response, "链接识别失败。");
+}
+
+async function handleJobSmartRecognition(button) {
   const section = button.closest("[data-job-recognition]");
   const status = section?.querySelector("[data-recognition-status]");
-  const textarea = section?.querySelector("[data-job-paste-text]");
+  const textarea = section?.querySelector("[data-job-recognition-input]");
   const form = document.getElementById("job-form");
   if (!section || !textarea || !form) return;
 
-  const text = textarea.value.trim();
-  if (text.length < 12) {
-    if (status) status.textContent = "请先粘贴完整一点的岗位文本。";
-    showToast("请先粘贴岗位文本");
+  const input = textarea.value.trim();
+  if (input.length < 12) {
+    if (status) status.textContent = "请先粘贴招聘链接或完整一点的岗位文本。";
+    showToast("请先粘贴招聘链接或岗位文本");
     renderToast();
     return;
   }
 
-  const recognized = extractJobPostingFromText(text);
-  if (!recognized.company && !recognized.title && !recognized.salary_amount) {
-    if (status) status.textContent = "未抽取到公司、岗位或薪资，请补充文本后再试。";
-    showToast("文本识别信息不足");
-    renderToast();
-    return;
-  }
+  section.classList.remove("is-complete");
+  section.classList.add("is-loading");
 
-  fillRecognizedJob(form, recognized);
-  section.classList.add("is-complete");
-  if (status) status.textContent = "已根据粘贴文本填入，可继续修改。";
-  showToast("岗位文本已填入");
+  try {
+    const url = extractFirstUrl(input);
+    const recognized = url
+      ? await recognizeRemoteJobLink(url)
+      : extractJobPostingFromText(input);
+
+    if (!recognized.company && !recognized.title && !recognized.salary_amount) {
+      throw new Error(url ? "页面内容不足，建议复制招聘页正文后再试。" : "未抽取到公司、岗位或薪资，请补充文本后再试。");
+    }
+
+    fillRecognizedJob(form, url ? { ...recognized, source: recognized.source || url } : recognized);
+    section.classList.remove("is-loading");
+    section.classList.add("is-complete");
+    if (status) status.textContent = url ? "已根据招聘链接填入，可继续修改。" : "已根据粘贴文本填入，可继续修改。";
+    showToast(url ? "招聘链接已识别" : "岗位文本已填入");
+  } catch (error) {
+    section.classList.remove("is-loading");
+    if (status) status.textContent = error instanceof Error ? error.message : "智能识别失败";
+    showToast("智能识别失败");
+  }
   renderToast();
 }
 
@@ -3317,8 +3366,8 @@ document.addEventListener("click", (event) => {
     return;
   }
 
-  if (action === "recognize-job-text") {
-    handleJobTextRecognition(actionEl);
+  if (action === "recognize-job-input") {
+    void handleJobSmartRecognition(actionEl);
     return;
   }
 

@@ -90,19 +90,75 @@ body.modal-open {
   color: var(--on-surface-variant);
 }
 
-.checkbox-row {
-  display: flex;
+.vision-toggle {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  padding: 13px 16px;
+  padding: 14px 16px;
   border-radius: var(--radius-md);
   background: var(--surface-lowest);
   box-shadow: inset 0 0 0 1px rgba(209, 198, 171, 0.7);
+  cursor: pointer;
 }
 
-.checkbox-row input {
-  width: auto;
-  box-shadow: none;
+.vision-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggle-track {
+  width: 50px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-container);
+  box-shadow: inset 0 0 0 1px var(--outline-variant);
+  transition: background-color 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+}
+
+.toggle-track span {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--surface-lowest);
+  box-shadow: var(--shadow-soft);
+  transition: transform 220ms var(--motion-pop);
+}
+
+.vision-toggle input:checked + .toggle-track {
+  background: var(--primary-container);
+  box-shadow: inset 0 0 0 1px var(--primary-fixed-dim);
+}
+
+.vision-toggle input:checked + .toggle-track span {
+  transform: translateX(20px);
+}
+
+.vision-toggle input:focus-visible + .toggle-track {
+  outline: 3px solid rgba(255, 203, 5, 0.35);
+  outline-offset: 3px;
+}
+
+.vision-toggle-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.vision-toggle-copy strong {
+  color: var(--on-surface);
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.vision-toggle-copy small {
+  color: var(--outline);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 button,
@@ -2874,8 +2930,36 @@ body.is-scrolled .topbar-subtitle {
 }
 
 .job-paste-textarea {
-  min-height: 116px;
+  min-height: 118px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
   resize: vertical;
+}
+
+.job-recognition-input {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--radius-md);
+  background: var(--surface-lowest);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+  transition: border-color 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft), background-color 180ms var(--motion-soft);
+}
+
+.job-recognition-input:focus-within {
+  border-color: var(--primary-fixed-dim);
+  box-shadow: 0 0 0 4px rgba(255, 203, 5, 0.18);
+}
+
+.job-recognition-input > .material-symbols-outlined {
+  margin-top: 2px;
+  color: var(--primary);
+  font-size: 22px;
+  font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 24;
 }
 
 .job-recognition-actions {
