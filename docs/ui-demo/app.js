@@ -1863,7 +1863,7 @@ function renderAiSettingsModal() {
   const provider = state.aiProvider;
   const body = `
     <form class="form-grid job-edit-form" id="ai-settings-form">
-      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，默认用于 AI 面试总结；勾选图片识别后，也可用于岗位截图识别。", "auto_awesome", `
+      ${formSection("用户 API Key", "Key 会加密保存到 Cloudflare/Supabase 后端，用于 AI 面试总结；勾选图片识别后，也用于 AI 截图识别。粘贴文本识别不调用 API。", "auto_awesome", `
         ${field("baseUrl", "Base URL", provider?.base_url || "https://api.openai.com/v1", "https://api.openai.com/v1")}
         ${field("model", "模型", provider?.model || "gpt-4o-mini", "gpt-4o-mini")}
         ${field("apiKey", "API Key", "", provider?.api_key_hint || "sk-...")}
@@ -1897,11 +1897,15 @@ function renderAiHelpModal() {
 
       <h3>API Key 在哪里获取？</h3>
       <p>OpenAI 官方路径：进入 OpenAI Platform，打开 API Keys 页面，点击 Create new secret key，复制以 <code>sk-</code> 开头的密钥。</p>
-      <p>保存后密钥只会显示一次，请立刻复制。GoOffer 会加密保存，只用于你的 AI 面试总结。</p>
+      <p>保存后密钥只会显示一次，请立刻复制。GoOffer 会加密保存。</p>
+
+      <h3>AI 服务用于哪些功能？</h3>
+      <p>当前只用于两类能力：一是面试记录的 AI 总结；二是在你勾选“这个模型支持图片识别”后，用于岗位截图识别。</p>
+      <p>新增岗位里的“粘贴文本识别”不调用 AI，也不消耗 API Key；它只在浏览器本地做规则抽取。</p>
 
       <h3>岗位识别需要 API Key 吗？</h3>
-      <p>默认不需要。新增岗位里可以直接粘贴招聘页面文字，GoOffer 会在浏览器本地抽取公司、岗位、城市、薪资和标签。</p>
-      <p>如果你要上传截图识别，需要先绑定支持图片输入的模型，并勾选“这个模型支持图片识别”。这会调用你绑定的 API，但准确率会明显高于浏览器端文字识别。</p>
+      <p>粘贴招聘文本不需要。上传截图识别需要，因为图片会交给你绑定的视觉模型来抽取岗位信息。</p>
+      <p>如果只想用 AI 面试总结，可以不勾选图片识别；如果要用截图识别，请选择支持图片输入的模型。</p>
     </section>
   `;
   return modalShell("如何获取 API 设置", body, `${button("返回设置", "open-ai-settings", "surface")} ${button("关闭", "close-modal")}`);
@@ -2276,29 +2280,45 @@ function normalizeOcrLine(value) {
   return String(value || "")
     .replace(/[|｜]/g, " ")
     .replace(/[，,]/g, "，")
+    .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function extractByLabel(lines, labels) {
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function extractByLabel(lines, labels, blockedNext = []) {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const matched = labels.find((label) => line.includes(label));
+    const matched = labels.find((label) => new RegExp(`^${escapeRegExp(label)}\\s*[:：\\-]?\\s*`, "i").test(line));
     if (!matched) continue;
-    const inline = line.split(new RegExp(`${matched}\\s*[:：]?`))[1]?.trim();
+    const inline = line.replace(new RegExp(`^${escapeRegExp(matched)}\\s*[:：\\-]?\\s*`, "i"), "").trim();
     if (inline && inline.length > 1) return inline;
     const next = lines[index + 1];
-    if (next && !labels.some((label) => next.includes(label))) return next.trim();
+    if (next && !labels.some((label) => next.includes(label)) && !blockedNext.some((label) => next.includes(label))) return next.trim();
   }
   return "";
 }
 
 function detectSalary(text) {
-  const matched = text.match(/(?:RMB|CNY|¥|￥)?\s*(\d+(?:\.\d+)?(?:\s*(?:-|~|—|–|至|到)\s*\d+(?:\.\d+)?)?)\s*(k|K|w|W|万|万\/年|千|千\/月|千\/月|k\/月|K\/月)/);
+  const repeatedUnit = text.match(/(?:RMB|CNY|¥|￥)?\s*(\d+(?:\.\d+)?)\s*(k|K|w|W|万|千)\s*(?:-|~|—|–|至|到)\s*(\d+(?:\.\d+)?)\s*(k|K|w|W|万|千)(?:\s*(?:\/月|\/年|月|年|薪))?/);
+  if (repeatedUnit) {
+    const unit = /w|W|万/.test(repeatedUnit[4] || repeatedUnit[2]) ? "w" : "k";
+    const amount = `${repeatedUnit[1]} - ${repeatedUnit[3]}`;
+    return { amount, unit, display: formatMoneyValue(amount, unit) };
+  }
+
+  const matched = text.match(/(?:RMB|CNY|¥|￥)?\s*(\d+(?:\.\d+)?(?:\s*(?:-|~|—|–|至|到)\s*\d+(?:\.\d+)?)?)\s*(k|K|w|W|万|万\/年|千|千\/月|千\/月|k\/月|K\/月)(?:\s*(?:·?\d+\s*薪|\/月|\/年|月|年))?/);
   if (!matched) return { amount: "", unit: "k", display: "" };
   const unit = /w|W|万/.test(matched[2]) ? "w" : "k";
   const amount = matched[1].replace(/\s*(?:~|—|–|至|到|-)\s*/g, " - ").trim();
   return { amount, unit, display: formatMoneyValue(amount, unit) };
+}
+
+function hasSalary(line) {
+  return Boolean(detectSalary(line).amount);
 }
 
 function detectCity(text) {
@@ -2317,6 +2337,8 @@ function detectTags(text) {
     ["数据", /数据|data/i],
     ["产品", /产品|pm\b/i],
     ["设计", /设计|ui|ux/i],
+    ["运营", /运营/i],
+    ["销售", /销售|商务|BD\b/i],
     ["远程", /远程|remote/i],
     ["实习", /实习|intern/i]
   ];
@@ -2327,30 +2349,91 @@ function detectTags(text) {
 }
 
 function looksLikeTitle(line) {
-  return /工程师|开发|前端|后端|全栈|算法|测试|产品|经理|运营|设计|分析师|架构|实习|研发|顾问|专家|负责人/i.test(line);
+  return /工程师|开发|前端|后端|全栈|客户端|服务端|算法|测试|产品|经理|运营|设计|分析师|架构|实习|研发|顾问|专家|负责人|Java|Golang|Python|Android|iOS|C\+\+|数据|增长|HRBP|招聘|销售|商务|BD/i.test(line);
 }
 
 function looksLikeCompany(line) {
   return /公司|科技|集团|有限|inc\.?|ltd\.?|corp\.?|字节|腾讯|阿里|百度|美团|微软|快手|小红书|京东|网易/i.test(line);
 }
 
+function isJobMetaLine(line) {
+  if (!line) return true;
+  if (hasSalary(line)) return true;
+  if (/岗位职责|工作职责|职位描述|职位详情|任职要求|岗位要求|公司介绍|福利|亮点|发布|更新|收藏|立即|沟通|申请|投递|分享|举报/.test(line)) return true;
+  if (/经验|学历|本科|大专|硕士|博士|校招|社招|全职|兼职|薪|待遇|五险|双休/.test(line) && !looksLikeTitle(line)) return true;
+  if (/^\d+[\-~—–至到]\d+年/.test(line)) return true;
+  if (detectCity(line) && line.length <= 10 && !looksLikeTitle(line)) return true;
+  return false;
+}
+
+function stripTitleNoise(line) {
+  return normalizeOcrLine(line)
+    .replace(/(?:RMB|CNY|¥|￥)?\s*\d+(?:\.\d+)?\s*(?:k|K|w|W|万|千)?\s*(?:-|~|—|–|至|到)\s*\d+(?:\.\d+)?\s*(?:k|K|w|W|万|千)(?:\s*(?:·?\d+\s*薪|\/月|\/年|月|年))?/g, "")
+    .replace(/(?:RMB|CNY|¥|￥)?\s*\d+(?:\.\d+)?(?:\s*(?:-|~|—|–|至|到)\s*\d+(?:\.\d+)?)?\s*(?:k|K|w|W|万|千)(?:\s*(?:·?\d+\s*薪|\/月|\/年|月|年))?/g, "")
+    .split(/[｜|]/)[0]
+    .split(/\s{2,}/)[0]
+    .replace(/^[招聘急聘诚聘]+\s*/, "")
+    .replace(/\s*(?:急招|热招|校招|社招|全职|兼职)\s*$/, "")
+    .trim();
+}
+
+function titleScore(line, index) {
+  const candidate = stripTitleNoise(line);
+  if (!candidate || candidate.length < 2 || candidate.length > 42) return -100;
+  if (isJobMetaLine(candidate)) return -80;
+
+  let score = 0;
+  if (looksLikeTitle(candidate)) score += 80;
+  if (/工程师|经理|设计师|分析师|架构师|顾问|专家|负责人|实习生/.test(candidate)) score += 20;
+  if (/前端|后端|Java|Golang|Python|算法|测试|产品|运营|设计|数据|销售|商务|HRBP/i.test(candidate)) score += 18;
+  if (index <= 6) score += 14 - index;
+  if (hasSalary(line)) score += 8;
+  if (looksLikeCompany(candidate)) score -= 25;
+  if (/职责|要求|描述|介绍|福利|团队/.test(candidate)) score -= 40;
+  if (/^[A-Za-z0-9+#.\s\u4e00-\u9fa5/（）()_-]+$/.test(candidate)) score += 4;
+  return score;
+}
+
+function detectTitleLine(lines, labeledTitle = "") {
+  if (labeledTitle && !/职责|要求|描述|详情/.test(labeledTitle)) return stripTitleNoise(labeledTitle);
+
+  return lines
+    .map((line, index) => ({ value: stripTitleNoise(line), score: titleScore(line, index) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.value || "";
+}
+
+function detectCompanyLine(lines, titleLine = "", labeledCompany = "") {
+  if (labeledCompany && labeledCompany !== titleLine && !looksLikeTitle(labeledCompany)) return labeledCompany;
+
+  const explicit = lines.find((line) => looksLikeCompany(line) && line !== titleLine && !looksLikeTitle(line));
+  if (explicit) return explicit;
+
+  const titleIndex = lines.findIndex((line) => stripTitleNoise(line) === titleLine || line.includes(titleLine));
+  const nearby = [titleIndex + 1, titleIndex + 2, titleIndex - 1]
+    .map((index) => lines[index])
+    .find((line) => line && line !== titleLine && !isJobMetaLine(line) && !looksLikeTitle(line) && line.length <= 36);
+  return nearby || "";
+}
+
 function extractJobPostingFromText(text) {
   const lines = text.split(/\r?\n/).map(normalizeOcrLine).filter((line) => line.length > 1);
   const compactText = lines.join("\n");
   const salary = detectSalary(compactText);
-  const labeledCompany = extractByLabel(lines, ["公司名称", "公司", "企业", "雇主"]);
-  const labeledTitle = extractByLabel(lines, ["岗位名称", "职位名称", "岗位", "职位", "招聘职位"]);
-  const companyLine = lines.find((line) => looksLikeCompany(line) && !looksLikeTitle(line));
-  const titleLine = lines.find((line) => looksLikeTitle(line) && !/职责|要求|描述/.test(line));
+  const labeledCompany = extractByLabel(lines, ["公司名称", "企业名称", "雇主", "公司"], ["公司介绍"]);
+  const labeledTitle = extractByLabel(lines, ["岗位名称", "职位名称", "招聘职位", "职位", "岗位"], ["岗位职责", "岗位要求", "职位描述", "职位详情"]);
+  const titleLine = detectTitleLine(lines, labeledTitle);
+  const companyLine = detectCompanyLine(lines, titleLine, labeledCompany);
   const city = detectCity(compactText);
   const descriptionLines = lines
     .filter((line) => !line.includes(salary.amount))
     .filter((line) => line !== labeledCompany && line !== labeledTitle)
+    .filter((line) => line !== companyLine && line !== titleLine)
     .slice(0, 8);
 
   return {
     company: (labeledCompany || companyLine || "").slice(0, 48),
-    title: (labeledTitle || titleLine || "").slice(0, 60),
+    title: (titleLine || labeledTitle || "").slice(0, 60),
     city,
     salary_amount: salary.amount,
     salary_unit: salary.unit,
