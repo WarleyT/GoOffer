@@ -126,6 +126,22 @@ function normalizeWorkStyle(value, city = "") {
   return "线下";
 }
 
+function makeLogoText(company, fallback = "GO") {
+  const text = String(company || "").trim();
+  if (!text) return fallback;
+  const han = Array.from(text.matchAll(/\p{Script=Han}/gu), (match) => match[0]).slice(0, 2).join("");
+  if (han) return han;
+  const words = text.match(/[A-Za-z0-9]+/g) || [];
+  if (words.length > 1) return words.map((word) => word[0]).join("").slice(0, 3).toUpperCase();
+  return Array.from(text.replace(/\s+/g, "")).slice(0, 3).join("").toUpperCase() || fallback;
+}
+
+function normalizeLogoText(logo, company = "") {
+  const text = Array.from(String(logo || "").trim()).slice(0, 4).join("");
+  if (!text || /[□�]/.test(text)) return makeLogoText(company);
+  return text;
+}
+
 const jobs = [
   {
     id: "job-bd",
@@ -534,11 +550,25 @@ function compactJobSnapshot(job) {
     source: String(job.source || "").slice(0, 120),
     status: normalizeJobStatus(job.status),
     priority: normalizePriority(job.priority),
-    logo: String(job.logo || "GO").slice(0, 4),
+    logo: normalizeLogoText(job.logo, job.company),
     logoTone: job.logoTone || "logo-yellow",
     tags: Array.isArray(job.tags) ? job.tags.slice(0, 8).map((tag) => String(tag).slice(0, 24)) : [],
     description: String(job.description || "暂未补充岗位详情。").slice(0, 1600),
     nextInterview: String(job.nextInterview || "暂无").slice(0, 60),
+    interviews: Array.isArray(job.interviews)
+      ? job.interviews.slice(0, 6).map((interview) => ({
+        round: String(interview.round || "未命名面试").slice(0, 80),
+        time: String(interview.time || "时间待定").slice(0, 60),
+        duration: String(interview.duration || "时长待定").slice(0, 40),
+        result: normalizeInterviewResult(interview.result),
+        questions: Array.isArray(interview.questions)
+          ? interview.questions.slice(0, 4).map((item) => ({
+            q: String(item.q || "").slice(0, 160),
+            a: String(item.a || "").slice(0, 260)
+          })).filter((item) => item.q)
+          : []
+      }))
+      : [],
     sharedAt: new Date().toISOString()
   };
 }
@@ -560,11 +590,25 @@ function decodeJobSnapshot(value) {
       source: String(payload.source || "未填写"),
       status: normalizeJobStatus(payload.status),
       priority: normalizePriority(payload.priority),
-      logo: String(payload.logo || "GO").slice(0, 4),
+      logo: normalizeLogoText(payload.logo, payload.company),
       logoTone: String(payload.logoTone || "logo-yellow"),
       tags: Array.isArray(payload.tags) ? payload.tags.map(String).slice(0, 8) : [],
       description: String(payload.description || "暂未补充岗位详情。"),
       nextInterview: String(payload.nextInterview || "暂无"),
+      interviews: Array.isArray(payload.interviews)
+        ? payload.interviews.slice(0, 6).map((interview) => ({
+          round: String(interview.round || "未命名面试"),
+          time: String(interview.time || "时间待定"),
+          duration: String(interview.duration || "时长待定"),
+          result: normalizeInterviewResult(interview.result),
+          questions: Array.isArray(interview.questions)
+            ? interview.questions.slice(0, 4).map((item) => ({
+              q: String(item.q || ""),
+              a: String(item.a || "暂未填写回答。")
+            })).filter((item) => item.q)
+            : []
+        }))
+        : [],
       sharedAt: String(payload.sharedAt || "")
     };
   } catch {
@@ -666,7 +710,7 @@ async function copyShareCardImage(job, url) {
   ctx.fillStyle = "#2b2926";
   ctx.font = "900 42px Arial, sans-serif";
   ctx.textAlign = "center";
-  ctx.fillText(job.logo || String(job.company || "GO").slice(0, 2).toUpperCase(), 136, 148);
+  ctx.fillText(normalizeLogoText(job.logo, job.company), 136, 148);
 
   ctx.textAlign = "left";
   ctx.fillStyle = "#171715";
@@ -744,7 +788,7 @@ async function supabaseTable(path, options = {}) {
 function remoteSalary(row, amountField = "salary_amount", unitField = "salary_unit", displayField = "salary_display") {
   return row[displayField]
     ? normalizeMoneyDisplay(row[displayField], row[unitField] || "")
-    : formatMoneyValue(row[amountField], row[unitField] || "k");
+    : formatMoneyValue(row[amountField], row[unitField] ?? "");
 }
 
 function mapRemoteJob(row, interviews = [], offer = null, summaries = []) {
@@ -757,7 +801,7 @@ function mapRemoteJob(row, interviews = [], offer = null, summaries = []) {
     source: row.source || "手动录入",
     priority: normalizePriority(row.priority),
     status: normalizeJobStatus(row.status),
-    logo: row.logo || String(row.company || "GO").slice(0, 2).toUpperCase(),
+    logo: normalizeLogoText(row.logo, row.company),
     logoTone: row.logo_tone || "logo-yellow",
     updated: "刚刚",
     nextInterview: interviews[0]?.time || "暂无",
@@ -903,7 +947,7 @@ async function loadRemoteWorkspace() {
 async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
   if (!(await refreshSessionIfNeeded())) return job;
-  const salary = parseMoneyParts(job.salary, "k");
+  const salary = parseMoneyParts(job.salary, "");
   const payload = await fetch("/api/jobs", {
     method: "POST",
     headers: {
@@ -922,7 +966,7 @@ async function createRemoteJobFromDemo(job) {
       status: job.status,
       tags: job.tags,
       description: job.description,
-      logo: job.logo,
+      logo: normalizeLogoText(job.logo, job.company),
       logo_tone: job.logoTone
     })
   }).then((response) => readJsonResponse(response, "岗位保存失败。"));
@@ -933,7 +977,7 @@ async function updateRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
   if (!isUuid(job.id)) return;
-  const salary = parseMoneyParts(job.salary, "k");
+  const salary = parseMoneyParts(job.salary, "");
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -947,7 +991,9 @@ async function updateRemoteJobFromDemo(job) {
       priority: job.priority,
       status: job.status,
       tags: job.tags,
-      description: job.description
+      description: job.description,
+      logo: normalizeLogoText(job.logo, job.company),
+      logo_tone: job.logoTone
     })
   });
 }
@@ -1007,6 +1053,9 @@ async function saveRemoteInterviewFromDemo(job, interview) {
     })
   });
   const interviewId = rows[0]?.id;
+  if (interviewId) {
+    interview.id = interviewId;
+  }
   if (interviewId && interview.questions.length) {
     await supabaseTable("interview_questions", {
       method: "POST",
@@ -1017,7 +1066,6 @@ async function saveRemoteInterviewFromDemo(job, interview) {
         answer: item.a
       })))
     });
-    interview.id = interviewId;
   }
   await updateRemoteJobFromDemo({ ...job, status: "面试中" });
 }
@@ -1146,7 +1194,7 @@ function parseDateTimeParts(value) {
 
 function parseDurationAmount(value) {
   const match = String(value || "").match(/\d+/);
-  return match ? match[0] : "";
+  return match ? Number(match[0]) : null;
 }
 
 function updateTagPreview(input) {
@@ -1892,6 +1940,7 @@ function renderDetail() {
                 </div>
               </div>
             </div>
+            ${priorityQuickControl(job)}
           </div>
         </article>
 
@@ -1965,7 +2014,7 @@ function renderSharedJobPage(job) {
           <span class="badge todo">静态岗位分享</span>
         </header>
         <div class="shared-hero">
-          <span class="logo-tile large ${escapeHtml(job.logoTone)}">${escapeHtml(job.logo || String(job.company).slice(0, 2).toUpperCase())}</span>
+          <span class="logo-tile large ${escapeHtml(job.logoTone)}">${escapeHtml(normalizeLogoText(job.logo, job.company))}</span>
           <div>
             <h1>${escapeHtml(job.company)} · ${escapeHtml(job.title)}</h1>
             <p class="shared-meta">${escapeHtml(job.city)} · ${escapeHtml(job.salary)} · ${escapeHtml(statusMeta[job.status]?.title || job.status)}</p>
@@ -1977,6 +2026,30 @@ function renderSharedJobPage(job) {
         <section class="shared-section">
           <h2>岗位详情</h2>
           <p class="shared-description">${escapeHtml(job.description || "暂未补充岗位详情。")}</p>
+        </section>
+        <section class="shared-section">
+          <h2>面试记录</h2>
+          ${job.interviews?.length ? `
+            <div class="shared-interviews">
+              ${job.interviews.map((interview) => `
+                <article class="shared-interview-card">
+                  <div class="inline-between">
+                    <div>
+                      <h3>${escapeHtml(interview.round)}</h3>
+                      <p class="row-meta">${escapeHtml(interview.time)} · ${escapeHtml(interview.duration)}</p>
+                    </div>
+                    ${badge(normalizeInterviewResult(interview.result))}
+                  </div>
+                  ${interview.questions?.length ? interview.questions.map((item) => `
+                    <div class="question-box">
+                      <strong>Q：${escapeHtml(item.q)}</strong>
+                      <p>${escapeHtml(item.a)}</p>
+                    </div>
+                  `).join("") : `<div class="empty-dash">暂未记录面试问答。</div>`}
+                </article>
+              `).join("")}
+            </div>
+          ` : emptyInline("这份分享快照里还没有面试记录。")}
         </section>
         <section class="shared-facts">
           ${quickItem("location_on", "城市", job.city)}
@@ -2019,6 +2092,16 @@ function statusQuickControl(job) {
     value: job.status,
     className: `status-quick ${tone}`,
     attrs: `data-job-status-select data-job-id="${job.id}"`
+  });
+}
+
+function priorityQuickControl(job) {
+  return customSelect({
+    label: "快速修改优先级",
+    options: priorities,
+    value: job.priority,
+    className: `priority-quick ${priorityTone(job.priority)}`,
+    attrs: `data-job-priority-select data-job-id="${job.id}"`
   });
 }
 
@@ -2566,7 +2649,7 @@ function durationField(name, label, value, placeholder, unit) {
     <label class="field duration-field">
       <span>${label}</span>
       <span class="input-with-suffix">
-        <input name="${name}" inputmode="numeric" value="${escapeHtml(parseDurationAmount(value))}" placeholder="${escapeHtml(placeholder)}">
+        <input name="${name}" inputmode="numeric" value="${escapeHtml(parseDurationAmount(value) ?? "")}" placeholder="${escapeHtml(placeholder)}">
         <span>${escapeHtml(unit)}</span>
       </span>
     </label>
@@ -2698,7 +2781,7 @@ function ratingSliderField(name, label, value, hint = "") {
 }
 
 function moneyField(name, label, value, placeholder, fallbackUnit = "k") {
-  const parts = parseMoneyParts(value, fallbackUnit);
+  const parts = parseMoneyParts(value, String(value || "").trim() ? "" : fallbackUnit);
   const unitName = `${name}Unit`;
   const amountName = `${name}Amount`;
   const displayLabel = label.includes("￥") ? label : `${label}（￥）`;
@@ -3220,6 +3303,7 @@ async function saveJob(editing = false) {
       priority: normalizePriority(data.priority),
       source: data.source.trim() || "手动录入",
       tags: data.tags ? parseTags(data.tags) : job.tags,
+      logo: makeLogoText(data.company.trim()),
       description: data.description.trim() || job.description,
       updated: "刚刚"
     });
@@ -3246,7 +3330,7 @@ async function saveJob(editing = false) {
       source: data.source.trim() || "手动录入",
       priority: normalizePriority(data.priority),
       status: normalizeJobStatus(data.status),
-      logo: data.company.trim().slice(0, 2).toUpperCase(),
+      logo: makeLogoText(data.company.trim()),
       logoTone: "logo-yellow",
       updated: "刚刚",
       nextInterview: "暂无",
@@ -3643,6 +3727,20 @@ function applyCustomSelectValue(select, value) {
       job.updated = "刚刚";
       syncJobData(job);
       showToast("投递状态已更新");
+      render();
+    }
+  }
+
+  if (select.hasAttribute("data-job-priority-select")) {
+    const job = jobs.find((item) => item.id === select.dataset.jobId);
+    if (job) {
+      job.priority = normalizePriority(value);
+      job.updated = "刚刚";
+      void updateRemoteJobFromDemo(job).catch((error) => {
+        showToast(error instanceof Error ? error.message : "优先级同步失败");
+        renderToast();
+      });
+      showToast("优先级已更新");
       render();
     }
   }

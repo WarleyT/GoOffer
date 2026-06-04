@@ -898,6 +898,25 @@ body.is-scrolled .topbar-subtitle {
   white-space: pre-wrap;
 }
 
+.shared-interviews {
+  display: grid;
+  gap: 14px;
+}
+
+.shared-interview-card {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  background: var(--surface-low);
+}
+
+.shared-interview-card h3 {
+  color: var(--on-surface);
+  font-size: 18px;
+  font-weight: 950;
+}
+
 .shared-facts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1766,6 +1785,29 @@ body.is-scrolled .topbar-subtitle {
   min-width: 144px;
 }
 
+.hero-card .priority-quick {
+  width: 104px;
+  min-width: 104px;
+  margin-left: 18px;
+}
+
+.hero-card .priority-quick .custom-select-trigger {
+  width: 100%;
+  min-height: 42px;
+  padding: 4px 28px 4px 14px;
+  box-shadow: var(--shadow-soft);
+}
+
+.hero-card .priority-quick .custom-select-value {
+  max-width: none;
+}
+
+.hero-card .priority-quick .custom-select-menu {
+  left: auto;
+  right: 0;
+  min-width: 128px;
+}
+
 .status-quick.applied {
   background: var(--primary-fixed);
   color: var(--primary);
@@ -2395,6 +2437,7 @@ body.is-scrolled .topbar-subtitle {
 }
 
 .logo-tile {
+  font-family: "Inter", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", Arial, sans-serif;
   width: 64px;
   height: 64px;
   border-radius: var(--radius-md);
@@ -2853,6 +2896,20 @@ body.is-scrolled .topbar-subtitle {
 
 .quick-value-button strong {
   overflow-wrap: anywhere;
+}
+
+.source-quick-item .quick-value-button {
+  width: 100%;
+  max-width: 100%;
+}
+
+.source-quick-item .quick-value-button strong {
+  display: block;
+  max-width: min(100%, 360px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 
 .quick-edit-form {
@@ -4664,6 +4721,18 @@ body.is-scrolled .topbar-subtitle {
   .hero-card .status-quick {
     width: 100%;
     min-width: 0;
+  }
+
+  .hero-card .inline-between {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .hero-card .priority-quick {
+    width: 88px;
+    min-width: 88px;
+    margin-left: 0;
   }
 
   .hero-meta-row {
