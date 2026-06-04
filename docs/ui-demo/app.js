@@ -1368,8 +1368,9 @@ function renderShell(content) {
   const sidebarMenu = sidebarMenuMeta();
   const navUp = navUpMeta();
   const totalJobs = Math.max(1, jobs.length);
+  const progressedJobs = jobs.filter((job) => job.status !== "待投递");
   const offerProgress = Math.min(100, (jobOffers().length / totalJobs) * 100).toFixed(2);
-  const appliedProgress = Math.min(100, ((jobs.filter((job) => job.status === "已投递").length + jobOffers().length) / totalJobs) * 100).toFixed(2);
+  const appliedProgress = Math.min(100, (progressedJobs.length / totalJobs) * 100).toFixed(2);
   const topbarActions = {
     dashboard: button("新增岗位", "open-job-modal"),
     jobs: button("新增岗位", "open-job-modal"),
@@ -1388,7 +1389,7 @@ function renderShell(content) {
           <div class="brand-name brand-logo" aria-label="GoOffer">
             <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
           </div>
-          <div class="brand-progress" aria-label="投递进度：已拿 Offer ${jobOffers().length} 个，已投递 ${jobs.filter((job) => job.status === "已投递").length} 个，总岗位 ${jobs.length} 个" style="--offer-progress:${offerProgress}%; --applied-progress:${appliedProgress}%;">
+          <div class="brand-progress" aria-label="投递进度：非待投递 ${progressedJobs.length} 个，已拿 Offer ${jobOffers().length} 个，总岗位 ${jobs.length} 个" style="--offer-progress:${offerProgress}%; --applied-progress:${appliedProgress}%;">
             <span class="brand-progress-applied"></span>
             <span class="brand-progress-offer"></span>
           </div>
