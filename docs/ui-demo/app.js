@@ -1927,7 +1927,7 @@ function renderDetail() {
     <section class="detail-layout${transitionClass}">
       <div>
         <article class="card card-pad hero-card">
-          <div class="inline-between" style="align-items:flex-start;">
+          <div class="inline-between hero-main">
             <div class="hero-content">
               <span class="logo-tile large ${job.logoTone}">${escapeHtml(job.logo)}</span>
               <div class="hero-copy">
@@ -1937,11 +1937,13 @@ function renderDetail() {
                   <div class="tag-row">
                     ${job.tags.map((tag) => `<span class="badge todo">${escapeHtml(tag)}</span>`).join("")}
                   </div>
-                  ${statusQuickControl(job)}
                 </div>
               </div>
             </div>
-            ${priorityQuickControl(job)}
+            <div class="hero-controls">
+              ${priorityQuickControl(job)}
+              ${statusQuickControl(job)}
+            </div>
           </div>
         </article>
 
