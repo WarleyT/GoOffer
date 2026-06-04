@@ -1934,7 +1934,7 @@ body.is-scrolled .topbar-subtitle {
 .screen-jobs .toolbar {
   position: relative;
   z-index: 45;
-  grid-template-columns: minmax(280px, 1fr) minmax(108px, max-content) minmax(124px, max-content) minmax(148px, max-content) minmax(104px, auto);
+  grid-template-columns: minmax(280px, 1fr) repeat(3, 148px) minmax(104px, auto);
   gap: 8px;
 }
 
@@ -1952,11 +1952,11 @@ body.is-scrolled .topbar-subtitle {
 }
 
 .screen-jobs .city-filter {
-  min-width: 108px;
+  min-width: 148px;
 }
 
 .screen-jobs .priority-filter {
-  min-width: 124px;
+  min-width: 148px;
 }
 
 .screen-jobs .sort-filter {
@@ -4677,8 +4677,12 @@ body.is-scrolled .topbar-subtitle {
     margin-bottom: 14px;
   }
 
+  .screen-jobs .toolbar {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
   .search-control {
-    grid-column: 1 / 7;
+    grid-column: 1 / 5;
     grid-row: 1;
     height: 44px;
     padding: 0 14px;
@@ -4724,8 +4728,8 @@ body.is-scrolled .topbar-subtitle {
   }
 
   .jobs-view-tools {
-    grid-column: 1 / 7;
-    grid-row: 3;
+    grid-column: 5 / 7;
+    grid-row: 1;
     justify-content: flex-end;
     gap: 4px;
   }
