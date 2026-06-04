@@ -9,7 +9,7 @@ const statuses = [
 
 const interviewResults = ["待面试", "等待结果", "失败", "通过"];
 const statusOrder = new Map(statuses.map((status, index) => [status, index]));
-const defaultFunnelStatuses = ["已投递", "面试中", "已拿Offer", "被拒绝"];
+const defaultFunnelStatuses = [...statuses];
 const priorities = ["高", "中", "低"];
 const priorityOrder = new Map(priorities.map((priority, index) => [priority, index]));
 const salaryUnits = ["", "k", "w"];
