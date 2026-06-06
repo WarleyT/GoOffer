@@ -54,7 +54,7 @@ export type Job = {
   title: string;
   city: string;
   salary_amount: string;
-  salary_unit: "k" | "w";
+  salary_unit: "" | "k" | "w";
   salary_display: string;
   source: string;
   priority: JobPriority;
@@ -75,7 +75,7 @@ export type JobDraft = {
   title: string;
   city: string;
   salary_amount: string;
-  salary_unit: "k" | "w";
+  salary_unit: "" | "k" | "w";
   salary_display: string;
   source: string;
   priority: JobPriority;

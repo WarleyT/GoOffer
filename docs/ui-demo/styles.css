@@ -4069,6 +4069,10 @@ body.is-scrolled .topbar-subtitle {
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom));
   z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   max-width: min(360px, calc(100vw - 32px));
   padding: 14px 18px;
   border-radius: var(--radius-md);
@@ -4078,6 +4082,26 @@ body.is-scrolled .topbar-subtitle {
   font-weight: 800;
   text-align: center;
   transform: translateX(-50%);
+}
+
+.toast.loading {
+  min-width: 156px;
+}
+
+.toast-spinner {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(255, 255, 255, 0.32);
+  border-top-color: var(--primary-container);
+  border-radius: 999px;
+  animation: toast-spin 760ms linear infinite;
+}
+
+@keyframes toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .celebration-layer {

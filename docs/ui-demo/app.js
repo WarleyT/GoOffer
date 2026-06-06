@@ -358,6 +358,8 @@ const modalRoot = document.getElementById("modal-root");
 const toastRoot = document.getElementById("toast-root");
 let topbarCollapsed = false;
 let modalPointerStartedOnBackdrop = false;
+let toastSequence = 0;
+const pendingOperations = new Set();
 const authStorageKey = "gooffer.supabase.session";
 
 function seedStorageKey() {
@@ -870,21 +872,15 @@ async function seedDemoWorkspaceIfNeeded() {
     aiSummary: job.aiSummary ? { ...job.aiSummary } : null
   }));
 
-  const seededJobs = [];
-  for (const demoJob of demoJobs) {
+  const seededJobs = await Promise.all(demoJobs.map(async (demoJob) => {
     const createdJob = await createRemoteJobFromDemo(demoJob);
     createdJob.interviews = demoJob.interviews;
     createdJob.offer = demoJob.offer;
     createdJob.aiSummary = demoJob.aiSummary;
-    seededJobs.push(createdJob);
-
-    for (const interview of demoJob.interviews) {
-      await saveRemoteInterviewFromDemo(createdJob, interview);
-    }
-    if (demoJob.offer) {
-      await saveRemoteOfferFromDemo(createdJob);
-    }
-  }
+    await Promise.all(demoJob.interviews.map((interview) => saveRemoteInterviewFromDemo(createdJob, interview)));
+    if (demoJob.offer) await saveRemoteOfferFromDemo(createdJob);
+    return createdJob;
+  }));
 
   localStorage.setItem(key, "1");
   jobs.splice(0, jobs.length, ...seededJobs);
@@ -959,7 +955,7 @@ async function createRemoteJobFromDemo(job) {
       title: job.title,
       city: job.city,
       salary_amount: salary.amount,
-      salary_unit: salary.unit,
+      salary_unit: salary.unit || null,
       salary_display: job.salary,
       source: job.source,
       priority: job.priority,
@@ -985,7 +981,7 @@ async function updateRemoteJobFromDemo(job) {
       title: job.title,
       city: job.city,
       salary_amount: salary.amount,
-      salary_unit: salary.unit,
+      salary_unit: salary.unit || null,
       salary_display: job.salary,
       source: job.source,
       priority: job.priority,
@@ -994,7 +990,8 @@ async function updateRemoteJobFromDemo(job) {
       description: job.description,
       logo: normalizeLogoText(job.logo, job.company),
       logo_tone: job.logoTone
-    })
+    }),
+    prefer: "return=minimal"
   });
 }
 
@@ -1002,7 +999,10 @@ async function deleteRemoteJobFromDemo(jobId) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
   if (!isUuid(jobId)) return;
-  await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, { method: "DELETE" });
+  await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, {
+    method: "DELETE",
+    prefer: "return=minimal"
+  });
 }
 
 async function persistLocalJobAsRemote(job) {
@@ -1022,12 +1022,8 @@ async function persistLocalJobAsRemote(job) {
   createdJob.interviews = localJob.interviews;
   createdJob.offer = localJob.offer;
   createdJob.aiSummary = localJob.aiSummary;
-  for (const interview of localJob.interviews) {
-    await saveRemoteInterviewFromDemo(createdJob, interview);
-  }
-  if (localJob.offer) {
-    await saveRemoteOfferFromDemo(createdJob);
-  }
+  await Promise.all(localJob.interviews.map((interview) => saveRemoteInterviewFromDemo(createdJob, interview)));
+  if (localJob.offer) await saveRemoteOfferFromDemo(createdJob);
 
   if (index >= 0) {
     jobs.splice(index, 1, createdJob);
@@ -1059,6 +1055,7 @@ async function saveRemoteInterviewFromDemo(job, interview) {
   if (interviewId && interview.questions.length) {
     await supabaseTable("interview_questions", {
       method: "POST",
+      prefer: "return=minimal",
       body: JSON.stringify(interview.questions.map((item) => ({
         user_id: state.auth.user.id,
         interview_id: interviewId,
@@ -1076,7 +1073,7 @@ async function saveRemoteOfferFromDemo(job) {
   const total = parseMoneyParts(job.offer.totalComp, "w");
   await supabaseTable("offers", {
     method: "POST",
-    prefer: "resolution=merge-duplicates,return=representation",
+    prefer: "resolution=merge-duplicates,return=minimal",
     body: JSON.stringify({
       user_id: state.auth.user.id,
       job_id: job.id,
@@ -3649,12 +3646,41 @@ async function generateAiSummary() {
 }
 
 function showToast(message) {
-  state.toast = message;
+  const id = ++toastSequence;
+  state.toast = { id, message, loading: false };
   window.clearTimeout(showToast.timer);
   showToast.timer = window.setTimeout(() => {
-    state.toast = "";
-    renderToast();
+    if (state.toast?.id === id) {
+      state.toast = "";
+      renderToast();
+    }
   }, 2800);
+  renderToast();
+}
+
+function showLoadingToast(message) {
+  const id = ++toastSequence;
+  state.toast = { id, message, loading: true };
+  window.clearTimeout(showToast.timer);
+  renderToast();
+  return () => {
+    if (state.toast?.id === id) {
+      state.toast = "";
+      renderToast();
+    }
+  };
+}
+
+async function withLoadingToast(key, message, operation) {
+  if (pendingOperations.has(key)) return;
+  pendingOperations.add(key);
+  const stopLoading = showLoadingToast(message);
+  try {
+    return await operation();
+  } finally {
+    pendingOperations.delete(key);
+    stopLoading();
+  }
 }
 
 function customSelectDisplay(select, value) {
@@ -3825,7 +3851,19 @@ function closeModal() {
 }
 
 function renderToast() {
-  toastRoot.innerHTML = state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : "";
+  if (!state.toast) {
+    toastRoot.innerHTML = "";
+    return;
+  }
+  const toast = typeof state.toast === "string"
+    ? { message: state.toast, loading: false }
+    : state.toast;
+  toastRoot.innerHTML = `
+    <div class="toast${toast.loading ? " loading" : ""}" role="${toast.loading ? "status" : "alert"}" aria-live="polite">
+      ${toast.loading ? '<span class="toast-spinner" aria-hidden="true"></span>' : ""}
+      <span>${escapeHtml(toast.message)}</span>
+    </div>
+  `;
 }
 
 function sidebarMenuMeta() {
@@ -4001,7 +4039,7 @@ document.addEventListener("pointerup", (event) => {
 document.addEventListener("submit", (event) => {
   if (event.target.matches("[data-quick-edit-form]")) {
     event.preventDefault();
-    void saveQuickEdit();
+    void withLoadingToast("save-quick-edit", "正在保存修改...", saveQuickEdit);
   }
 });
 
@@ -4088,7 +4126,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-quick-edit") {
-    void saveQuickEdit();
+    void withLoadingToast("save-quick-edit", "正在保存修改...", saveQuickEdit);
     return;
   }
 
@@ -4181,12 +4219,12 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "login") {
-    void handleLoginSubmit(false);
+    void withLoadingToast("auth", "正在登录...", () => handleLoginSubmit(false));
     return;
   }
 
   if (action === "signup") {
-    void handleLoginSubmit(true);
+    void withLoadingToast("auth", "正在注册账号...", () => handleLoginSubmit(true));
     return;
   }
 
@@ -4215,12 +4253,12 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-ai-provider") {
-    void saveAiProvider();
+    void withLoadingToast("save-ai-provider", "正在保存 AI 设置...", saveAiProvider);
     return;
   }
 
   if (action === "test-ai-provider") {
-    void testAiProvider();
+    void withLoadingToast("test-ai-provider", "正在测试 AI 连接...", testAiProvider);
     return;
   }
 
@@ -4319,12 +4357,12 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "save-job") {
-    void saveJob(false);
+    void withLoadingToast("save-job", "正在保存岗位...", () => saveJob(false));
     return;
   }
 
   if (action === "save-job-edit") {
-    void saveJob(true);
+    void withLoadingToast("save-job", "正在保存岗位修改...", () => saveJob(true));
     return;
   }
 
@@ -4337,17 +4375,17 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "delete-job") {
-    void deletePendingJob();
+    void withLoadingToast("delete-job", "正在删除岗位...", deletePendingJob);
     return;
   }
 
   if (action === "save-interview") {
-    void saveInterview();
+    void withLoadingToast("save-interview", "正在保存面试记录...", saveInterview);
     return;
   }
 
   if (action === "save-offer") {
-    void saveOffer();
+    void withLoadingToast("save-offer", "正在保存 Offer...", saveOffer);
     return;
   }
 

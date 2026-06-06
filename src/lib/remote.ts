@@ -15,7 +15,7 @@ function mapJob(row: Record<string, unknown>): Job {
     title: String(row.title || ""),
     city: String(row.city || ""),
     salary_amount: String(row.salary_amount || ""),
-    salary_unit: (row.salary_unit as "k" | "w") || "k",
+    salary_unit: (row.salary_unit as "" | "k" | "w") || "",
     salary_display: String(row.salary_display || ""),
     source: String(row.source || ""),
     priority: (row.priority as Job["priority"]) || "中",
@@ -133,6 +133,7 @@ export async function createRemoteJob(userId: string, draft: JobDraft) {
     .insert({
       user_id: userId,
       ...draft,
+      salary_unit: draft.salary_unit || null,
       salary_display: draft.salary_display || normalizeSalary(draft.salary_amount, draft.salary_unit),
       logo: initials(draft.company),
       logo_tone: "yellow"
@@ -146,7 +147,11 @@ export async function createRemoteJob(userId: string, draft: JobDraft) {
 
 export async function updateRemoteJob(jobId: string, patch: Partial<JobDraft & { status: Job["status"] }>) {
   const client = assertSupabase();
-  const { error } = await client.from("jobs").update(patch).eq("id", jobId);
+  const normalizedPatch = {
+    ...patch,
+    ...(Object.prototype.hasOwnProperty.call(patch, "salary_unit") ? { salary_unit: patch.salary_unit || null } : {})
+  };
+  const { error } = await client.from("jobs").update(normalizedPatch).eq("id", jobId);
   if (error) throw new Error(error.message);
 }
 

@@ -5,7 +5,7 @@ type JobBody = {
   title?: string;
   city?: string;
   salary_amount?: string;
-  salary_unit?: "k" | "w";
+  salary_unit?: "" | "k" | "w" | null;
   salary_display?: string;
   source?: string;
   priority?: string;
@@ -33,7 +33,7 @@ function normalizeBody(body: JobBody, userId: string) {
     title,
     city: String(body.city || "").trim() || "未填写",
     salary_amount: String(body.salary_amount || "").trim(),
-    salary_unit: body.salary_unit === "w" ? "w" : "k",
+    salary_unit: body.salary_unit === "k" || body.salary_unit === "w" ? body.salary_unit : null,
     salary_display: String(body.salary_display || "").trim(),
     source: String(body.source || "").trim() || "手动录入",
     priority: String(body.priority || "中"),

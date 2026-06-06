@@ -15,7 +15,7 @@ export function displayTags(tags: string[]) {
   return tags.join("，");
 }
 
-export function normalizeSalary(amount: string, unit: "k" | "w") {
+export function normalizeSalary(amount: string, unit: "" | "k" | "w") {
   const cleanAmount = amount.trim();
   return cleanAmount ? `RMB ${cleanAmount}${unit}` : "";
 }
