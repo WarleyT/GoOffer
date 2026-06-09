@@ -135,6 +135,46 @@ export function normalizeBaseUrl(baseUrl: string) {
   return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
 }
 
+export function validateProviderBaseUrl(baseUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error("Base URL 不是有效网址。");
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error("Base URL 必须使用 HTTPS。");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("Base URL 不能包含账号或密码。");
+  }
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const blockedHost = hostname === "localhost"
+    || hostname === "::1"
+    || hostname === "0.0.0.0"
+    || hostname.endsWith(".local")
+    || hostname.startsWith("::ffff:127.")
+    || hostname.startsWith("::ffff:10.")
+    || hostname.startsWith("::ffff:192.168.")
+    || hostname.startsWith("fc")
+    || hostname.startsWith("fd")
+    || hostname.startsWith("fe8")
+    || hostname.startsWith("fe9")
+    || hostname.startsWith("fea")
+    || hostname.startsWith("feb")
+    || /^127\./.test(hostname)
+    || /^10\./.test(hostname)
+    || /^192\.168\./.test(hostname)
+    || /^169\.254\./.test(hostname)
+    || /^100\.(6[4-9]|[789]\d|1[01]\d|12[0-7])\./.test(hostname)
+    || /^198\.(1[89])\./.test(hostname)
+    || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
+  if (blockedHost) {
+    throw new Error("Base URL 不允许指向本机或私有网络。");
+  }
+  return parsed.toString().replace(/\/+$/, "");
+}
+
 export async function readJson<T>(request: Request): Promise<T | Response> {
   try {
     return (await request.json()) as T;
@@ -171,19 +211,33 @@ export async function callOpenAICompatible(args: {
   messages: unknown[];
   temperature?: number;
 }) {
-  const response = await fetch(`${normalizeBaseUrl(args.baseUrl)}/chat/completions`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${args.apiKey}`,
-      "content-type": "application/json"
-    },
-    body: JSON.stringify({
-      model: args.model,
-      messages: args.messages,
-      temperature: args.temperature ?? 0.3,
-      response_format: { type: "json_object" }
-    })
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  let response: Response;
+  try {
+    const safeBaseUrl = validateProviderBaseUrl(args.baseUrl);
+    response = await fetch(`${normalizeBaseUrl(safeBaseUrl)}/chat/completions`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${args.apiKey}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: args.model,
+        messages: args.messages,
+        temperature: args.temperature ?? 0.3,
+        response_format: { type: "json_object" }
+      }),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("AI 服务响应超时，请稍后重试。");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {

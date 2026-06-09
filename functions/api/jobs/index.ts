@@ -50,24 +50,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (user instanceof Response) return user;
 
   const supabase = serviceClient(env);
-  const [{ data: jobs, error: jobsError }, { data: interviews }, { data: questions }, { data: offers }, { data: summaries }] =
-    await Promise.all([
-      supabase.from("jobs").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
-      supabase.from("interviews").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
-      supabase.from("interview_questions").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
-      supabase.from("offers").select("*").eq("user_id", user.id),
-      supabase.from("ai_summaries").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
-    ]);
+  const results = await Promise.all([
+    supabase.from("jobs").select("*").eq("user_id", user.id).order("updated_at", { ascending: false }),
+    supabase.from("interviews").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
+    supabase.from("interview_questions").select("*").eq("user_id", user.id).order("created_at", { ascending: true }),
+    supabase.from("offers").select("*").eq("user_id", user.id),
+    supabase.from("ai_summaries").select("*").eq("user_id", user.id).order("created_at", { ascending: false })
+  ]);
+  const failed = results.find((result) => result.error);
+  if (failed?.error) return errorJson(500, "WORKSPACE_LOAD_FAILED", failed.error.message);
 
-  if (jobsError) return errorJson(500, "JOBS_LOAD_FAILED", jobsError.message);
-
-  return json({
-    jobs: jobs || [],
-    interviews: interviews || [],
-    questions: questions || [],
-    offers: offers || [],
-    summaries: summaries || []
-  });
+  const [jobs, interviews, questions, offers, summaries] = results.map((result) => result.data || []);
+  return json(
+    { jobs, interviews, questions, offers, summaries },
+    { headers: { "cache-control": "private, no-store" } }
+  );
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

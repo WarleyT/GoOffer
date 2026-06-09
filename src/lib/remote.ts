@@ -2,6 +2,21 @@ import type { AIProvider, AISummary, Interview, InterviewQuestion, Job, JobDraft
 import { initials, normalizeSalary } from "./format";
 import { authHeader, supabase } from "./supabase";
 
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: init.signal || controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("请求超时，请检查网络后重试。");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 function assertSupabase() {
   if (!supabase) throw new Error("Supabase 未配置。");
   return supabase;
@@ -58,6 +73,9 @@ function mapOffer(row: Record<string, unknown>): Offer {
     stability: Number(row.stability || 3),
     balance: Number(row.balance || 3),
     interest: Number(row.interest || 3),
+    custom_dimensions: Array.isArray(row.custom_dimensions)
+      ? row.custom_dimensions as Array<{ label: string; score: number }>
+      : [],
     risk: String(row.risk || ""),
     decision: String(row.decision || "待决定")
   };
@@ -79,16 +97,17 @@ function mapSummary(row: Record<string, unknown>): AISummary {
 
 export async function loadJobs() {
   const client = assertSupabase();
-  const [{ data: jobRows, error: jobError }, { data: interviewRows }, { data: questionRows }, { data: offerRows }, { data: summaryRows }] =
-    await Promise.all([
-      client.from("jobs").select("*").order("updated_at", { ascending: false }),
-      client.from("interviews").select("*").order("created_at", { ascending: true }),
-      client.from("interview_questions").select("*").order("created_at", { ascending: true }),
-      client.from("offers").select("*"),
-      client.from("ai_summaries").select("*").order("created_at", { ascending: false })
-    ]);
-
-  if (jobError) throw new Error(jobError.message);
+  const results = await Promise.all([
+    client.from("jobs").select("*").order("updated_at", { ascending: false }),
+    client.from("interviews").select("*").order("created_at", { ascending: true }),
+    client.from("interview_questions").select("*").order("created_at", { ascending: true }),
+    client.from("offers").select("*"),
+    client.from("ai_summaries").select("*").order("created_at", { ascending: false })
+  ]);
+  const failed = results.find((result) => result.error);
+  if (failed?.error) throw new Error(failed.error.message);
+  const [jobRows, interviewRows, questionRows, offerRows, summaryRows] =
+    results.map((result) => result.data || []);
 
   const questionsByInterview = new Map<string, InterviewQuestion[]>();
   (questionRows || []).forEach((row) => {
@@ -194,13 +213,28 @@ export async function addRemoteInterview(
     }));
   if (rows.length) {
     const { error: questionError } = await client.from("interview_questions").insert(rows);
-    if (questionError) throw new Error(questionError.message);
+    if (questionError) {
+      await client.from("interviews").delete().eq("id", interviewId);
+      throw new Error(questionError.message);
+    }
   }
-  await updateRemoteJob(jobId, { status: "面试中" });
+  try {
+    await updateRemoteJob(jobId, { status: "面试中" });
+  } catch (error) {
+    await client.from("interviews").delete().eq("id", interviewId);
+    throw error;
+  }
 }
 
 export async function saveRemoteOffer(userId: string, jobId: string, draft: OfferDraft) {
   const client = assertSupabase();
+  const { data: previousOffer, error: previousOfferError } = await client
+    .from("offers")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (previousOfferError) throw new Error(previousOfferError.message);
   const { error } = await client.from("offers").upsert(
     {
       user_id: userId,
@@ -212,7 +246,16 @@ export async function saveRemoteOffer(userId: string, jobId: string, draft: Offe
     { onConflict: "user_id,job_id" }
   );
   if (error) throw new Error(error.message);
-  await updateRemoteJob(jobId, { status: "已拿Offer" });
+  try {
+    await updateRemoteJob(jobId, { status: "已拿Offer" });
+  } catch (statusError) {
+    if (previousOffer) {
+      await client.from("offers").upsert(previousOffer, { onConflict: "user_id,job_id" });
+    } else {
+      await client.from("offers").delete().eq("user_id", userId).eq("job_id", jobId);
+    }
+    throw statusError;
+  }
 }
 
 export async function saveRemoteSummary(
@@ -238,25 +281,25 @@ export async function saveRemoteSummary(
 export async function recognizeRemoteJob(file: File): Promise<RecognizedJob> {
   const formData = new FormData();
   formData.append("image", file);
-  const response = await fetch("/api/jobs/recognize", {
+  const response = await apiFetch("/api/jobs/recognize", {
     method: "POST",
     headers: await authHeader(),
     body: formData
-  });
+  }, 60000);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.error?.message || "截图识别失败。");
   return payload as RecognizedJob;
 }
 
 export async function generateRemoteSummary(interviewId: string) {
-  const response = await fetch(`/api/interviews/${interviewId}/ai-summary/generate`, {
+  const response = await apiFetch(`/api/interviews/${interviewId}/ai-summary/generate`, {
     method: "POST",
     headers: {
       ...(await authHeader()),
       "content-type": "application/json"
     },
     body: JSON.stringify({ regenerate: false })
-  });
+  }, 60000);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.error?.message || "AI 总结失败。");
   return payload as {
@@ -272,7 +315,7 @@ export async function generateRemoteSummary(interviewId: string) {
 }
 
 export async function getRemoteProvider(): Promise<AIProvider | null> {
-  const response = await fetch("/api/me/ai-provider", {
+  const response = await apiFetch("/api/me/ai-provider", {
     headers: await authHeader()
   });
   const payload = await response.json();
@@ -286,7 +329,7 @@ export async function saveRemoteProvider(input: {
   api_key: string;
   supports_vision: boolean;
 }): Promise<AIProvider> {
-  const response = await fetch("/api/me/ai-provider", {
+  const response = await apiFetch("/api/me/ai-provider", {
     method: "PUT",
     headers: {
       ...(await authHeader()),
@@ -300,7 +343,7 @@ export async function saveRemoteProvider(input: {
 }
 
 export async function deleteRemoteProvider() {
-  const response = await fetch("/api/me/ai-provider", {
+  const response = await apiFetch("/api/me/ai-provider", {
     method: "DELETE",
     headers: await authHeader()
   });
@@ -309,10 +352,10 @@ export async function deleteRemoteProvider() {
 }
 
 export async function testRemoteProvider() {
-  const response = await fetch("/api/me/ai-provider/test", {
+  const response = await apiFetch("/api/me/ai-provider/test", {
     method: "POST",
     headers: await authHeader()
-  });
+  }, 50000);
   const payload = await response.json();
   if (!response.ok) throw new Error(payload?.error?.message || "AI 连接测试失败。");
 }

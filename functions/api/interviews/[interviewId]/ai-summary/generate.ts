@@ -16,7 +16,7 @@ function safeParseJson(value: string) {
   return JSON.parse(candidate);
 }
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, params, waitUntil }) => {
   const user = await requireUser(request, env);
   if (user instanceof Response) return user;
 
@@ -40,7 +40,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
   if (interviewError || !interview) return errorJson(404, "INTERVIEW_NOT_FOUND", "没有找到这轮面试。");
 
-  const [{ data: job }, { data: questions }, { data: promptVersion }] = await Promise.all([
+  const [
+    { data: job, error: jobError },
+    { data: questions, error: questionsError },
+    { data: promptVersion }
+  ] = await Promise.all([
     supabase
       .from("jobs")
       .select("id, company, title, city, salary_display, source, tags, description, priority, status")
@@ -59,7 +63,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
       .single()
   ]);
 
-  if (!job) return errorJson(404, "JOB_NOT_FOUND", "没有找到关联岗位。");
+  if (jobError || !job) return errorJson(404, "JOB_NOT_FOUND", "没有找到关联岗位。");
+  if (questionsError) return errorJson(502, "QUESTIONS_LOAD_FAILED", "面试问题读取失败，请稍后重试。");
 
   const inputSnapshot = {
     job,
@@ -114,7 +119,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
 
     generationId = run?.id || "";
 
-    await supabase.from("ai_summaries").insert({
+    const { error: summaryError } = await supabase.from("ai_summaries").insert({
       user_id: user.id,
       job_id: job.id,
       interview_id: interview.id,
@@ -124,14 +129,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params }
       improvements: Array.isArray(summary.improvements) ? summary.improvements : [],
       next: Array.isArray(summary.next) ? summary.next : []
     });
+    if (summaryError) throw new Error(`AI 总结保存失败：${summaryError.message}`);
 
-    await supabase.from("analytics_events").insert({
+    waitUntil(Promise.resolve(supabase.from("analytics_events").insert({
       user_id: user.id,
       event_name: "ai_summary_generated",
       entity_type: "interview",
       entity_id: interview.id,
       properties: { generation_id: generationId, prompt_version_id: promptVersion?.id || "ai_summary_action_v1" }
-    });
+    }));
 
     return json({
       generation_id: generationId,

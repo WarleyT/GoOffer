@@ -31,7 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const { data } = await supabase.auth.getSession();
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        await supabase.auth.signOut({ scope: "local" });
+      }
       const authUser = data.session?.user;
       if (!mounted) return;
       if (authUser) {
@@ -96,11 +99,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
         if (error) throw new Error(error.message);
         if (data.user) {
-          await supabase.from("profiles").upsert({
+          const { error: profileError } = await supabase.from("profiles").upsert({
             id: data.user.id,
             username,
             display_name: username
           });
+          if (profileError) console.warn("Profile initialization failed:", profileError.message);
         }
       },
       async signOut() {
@@ -109,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
           return;
         }
-        await supabase.auth.signOut();
+        const { error } = await supabase.auth.signOut();
+        if (error) throw new Error(error.message);
       }
     }),
     [loading, mode, user]

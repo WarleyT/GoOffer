@@ -6,6 +6,7 @@ import {
   readJson,
   requireUser,
   serviceClient,
+  validateProviderBaseUrl,
   type Env
 } from "../_shared";
 
@@ -29,7 +30,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     .maybeSingle();
 
   if (error) return errorJson(500, "PROVIDER_LOAD_FAILED", "读取 AI 配置失败。");
-
   return json({ provider: data || null });
 };
 
@@ -44,15 +44,33 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
   const body = await readJson<SaveProviderRequest>(request);
   if (body instanceof Response) return body;
 
-  const baseUrl = String(body.base_url || "").trim();
+  let baseUrl = String(body.base_url || "").trim();
   const model = String(body.model || "").trim();
   const apiKey = String(body.api_key || "").trim();
-  if (!baseUrl || !model || !apiKey) {
-    return errorJson(400, "VALIDATION_FAILED", "Base URL、模型和 API Key 都是必填项。");
+  if (!baseUrl || !model) {
+    return errorJson(400, "VALIDATION_FAILED", "Base URL 和模型是必填项。");
+  }
+  try {
+    baseUrl = validateProviderBaseUrl(baseUrl);
+  } catch (error) {
+    return errorJson(400, "INVALID_BASE_URL", error instanceof Error ? error.message : "Base URL 无效。");
   }
 
-  const encrypted = await encryptText(apiKey, env.AI_API_KEY_ENCRYPTION_SECRET);
   const supabase = serviceClient(env);
+  const { data: existing } = await supabase
+    .from("user_ai_providers")
+    .select("encrypted_api_key, api_key_iv, api_key_hint")
+    .eq("user_id", user.id)
+    .eq("provider", "openai-compatible")
+    .maybeSingle();
+
+  if (!apiKey && !existing) {
+    return errorJson(400, "API_KEY_REQUIRED", "首次绑定必须填写 API Key。");
+  }
+
+  const encrypted = apiKey
+    ? await encryptText(apiKey, env.AI_API_KEY_ENCRYPTION_SECRET)
+    : null;
   const { data, error } = await supabase
     .from("user_ai_providers")
     .upsert(
@@ -62,9 +80,9 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
         base_url: baseUrl,
         model,
         supports_vision: Boolean(body.supports_vision),
-        encrypted_api_key: encrypted.encrypted,
-        api_key_iv: encrypted.iv,
-        api_key_hint: keyHint(apiKey)
+        encrypted_api_key: encrypted?.encrypted || existing?.encrypted_api_key,
+        api_key_iv: encrypted?.iv || existing?.api_key_iv,
+        api_key_hint: apiKey ? keyHint(apiKey) : existing?.api_key_hint
       },
       { onConflict: "user_id,provider" }
     )
@@ -72,7 +90,6 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     .single();
 
   if (error) return errorJson(500, "PROVIDER_SAVE_FAILED", "保存 AI 配置失败。");
-
   return json({ provider: data });
 };
 
@@ -88,6 +105,5 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
     .eq("provider", "openai-compatible");
 
   if (error) return errorJson(500, "PROVIDER_DELETE_FAILED", "删除 AI 配置失败。");
-
   return json({ ok: true });
 };

@@ -43,6 +43,7 @@ export type Offer = {
   stability: number;
   balance: number;
   interest: number;
+  custom_dimensions?: Array<{ label: string; score: number }>;
   risk: string;
   decision: string;
 };
@@ -94,6 +95,7 @@ export type OfferDraft = {
   stability: number;
   balance: number;
   interest: number;
+  custom_dimensions?: Array<{ label: string; score: number }>;
   risk: string;
 };
 

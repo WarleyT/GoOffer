@@ -303,6 +303,7 @@ const jobs = [
     }
   }
 ];
+const demoJobTemplates = structuredClone(jobs);
 
 const state = {
   screen: "dashboard",
@@ -360,7 +361,97 @@ let topbarCollapsed = false;
 let modalPointerStartedOnBackdrop = false;
 let toastSequence = 0;
 const pendingOperations = new Set();
+const offerSaveTimers = new Map();
+const offerSaveQueues = new Map();
+let workspaceLoadPromise = null;
 const authStorageKey = "gooffer.supabase.session";
+const runtimeConfigStorageKey = "gooffer.runtime.config";
+
+function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, {
+    ...options,
+    signal: options.signal || controller.signal
+  })
+    .catch((error) => {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error("请求超时，请检查网络后重试。");
+      }
+      throw error;
+    })
+    .finally(() => window.clearTimeout(timeout));
+}
+
+function workspaceStorageKey() {
+  const userId = state.auth.user?.id || state.auth.session?.user?.id;
+  return userId ? `gooffer.workspace.${userId}` : "";
+}
+
+function saveWorkspaceCache() {
+  const key = workspaceStorageKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify({
+      jobs,
+      activeJobId: state.activeJobId,
+      offerSelection: state.offerSelection,
+      savedAt: Date.now()
+    }));
+  } catch {
+    // Storage can be unavailable in private browsing; remote persistence remains authoritative.
+  }
+}
+
+function restoreWorkspaceCache() {
+  const key = workspaceStorageKey();
+  if (!key) return false;
+  try {
+    const cached = JSON.parse(localStorage.getItem(key) || "null");
+    if (!cached || !Array.isArray(cached.jobs)) return false;
+    const restoredJobs = cached.jobs.map((job) => ({
+      ...job,
+      status: normalizeJobStatus(job.status),
+      priority: normalizePriority(job.priority),
+      tags: Array.isArray(job.tags) ? job.tags : [],
+      interviews: Array.isArray(job.interviews) ? job.interviews : [],
+      offer: job.offer || null,
+      aiSummary: job.aiSummary || null
+    }));
+    jobs.splice(0, jobs.length, ...restoredJobs);
+    state.activeJobId = restoredJobs.some((job) => job.id === cached.activeJobId)
+      ? cached.activeJobId
+      : restoredJobs[0]?.id || "";
+    state.offerSelection = Array.isArray(cached.offerSelection)
+      ? cached.offerSelection.filter((id) => restoredJobs.some((job) => job.id === id))
+      : restoredJobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resetToDemoWorkspace() {
+  const demoJobs = structuredClone(demoJobTemplates);
+  jobs.splice(0, jobs.length, ...demoJobs);
+  state.activeJobId = demoJobs[0]?.id || "";
+  state.offerSelection = demoJobs
+    .filter((job) => job.status === "已拿Offer" && job.offer)
+    .map((job) => job.id);
+}
+
+function restoreRuntimeConfig() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(runtimeConfigStorageKey) || "null");
+    if (!cached?.url || !cached?.anonKey) return false;
+    state.auth.url = cached.url;
+    state.auth.anonKey = cached.anonKey;
+    state.auth.configured = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function seedStorageKey() {
   return state.auth.user?.id ? `gooffer.demo.seeded.${state.auth.user.id}` : "";
@@ -388,10 +479,17 @@ async function readJsonResponse(response, fallbackMessage) {
 }
 
 async function loadRuntimeConfig() {
-  const payload = await fetch("/api/config").then((response) => readJsonResponse(response, "读取配置失败。"));
+  const payload = await fetchWithTimeout("/api/config", {}, 8000)
+    .then((response) => readJsonResponse(response, "读取配置失败。"));
   state.auth.url = payload.supabase_url || "";
   state.auth.anonKey = payload.supabase_anon_key || "";
   state.auth.configured = Boolean(state.auth.url && state.auth.anonKey);
+  if (state.auth.configured) {
+    localStorage.setItem(runtimeConfigStorageKey, JSON.stringify({
+      url: state.auth.url,
+      anonKey: state.auth.anonKey
+    }));
+  }
 }
 
 function authHeaders(extra = {}) {
@@ -418,6 +516,7 @@ function saveSession(session) {
 
 function expireLocalSession(message = "登录状态已失效，已自动退出。") {
   saveSession(null);
+  if (!state.sharedJob) resetToDemoWorkspace();
   state.accountOpen = false;
   state.aiProvider = null;
   showToast(message);
@@ -448,11 +547,11 @@ async function refreshSessionIfNeeded({ force = false } = {}) {
   if (!force && !sessionExpiresSoon(session)) return true;
 
   try {
-    const response = await fetch(`${state.auth.url}/auth/v1/token?grant_type=refresh_token`, {
+    const response = await fetchWithTimeout(`${state.auth.url}/auth/v1/token?grant_type=refresh_token`, {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({ refresh_token: session.refresh_token })
-    });
+    }, 12000);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.access_token) {
       expireLocalSession();
@@ -467,26 +566,36 @@ async function refreshSessionIfNeeded({ force = false } = {}) {
 }
 
 async function signIn(email, password) {
-  const response = await fetch(`${state.auth.url}/auth/v1/token?grant_type=password`, {
+  const response = await fetchWithTimeout(`${state.auth.url}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ email, password })
-  });
+  }, 15000);
   const payload = await readJsonResponse(response, "登录失败，请检查邮箱和密码。");
   saveSession(payload);
-  await loadRemoteWorkspace();
+  if (!restoreWorkspaceCache()) {
+    jobs.splice(0, jobs.length);
+    state.activeJobId = "";
+    state.offerSelection = [];
+  }
+  void refreshWorkspaceInBackground();
 }
 
 async function signUp(email, password) {
-  const response = await fetch(`${state.auth.url}/auth/v1/signup`, {
+  const response = await fetchWithTimeout(`${state.auth.url}/auth/v1/signup`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify({ email, password })
-  });
+  }, 15000);
   const payload = await readJsonResponse(response, "注册失败，请稍后再试。");
   if (payload.access_token) {
     saveSession(payload);
-    await loadRemoteWorkspace();
+    if (!restoreWorkspaceCache()) {
+      jobs.splice(0, jobs.length);
+      state.activeJobId = "";
+      state.offerSelection = [];
+    }
+    void refreshWorkspaceInBackground();
     return "signed-in";
   } else {
     try {
@@ -501,12 +610,13 @@ async function signUp(email, password) {
 
 async function signOut() {
   if (state.auth.session?.access_token) {
-    await fetch(`${state.auth.url}/auth/v1/logout`, {
+    await fetchWithTimeout(`${state.auth.url}/auth/v1/logout`, {
       method: "POST",
       headers: authHeaders()
-    }).catch(() => null);
+    }, 8000).catch(() => null);
   }
   saveSession(null);
+  resetToDemoWorkspace();
   state.accountOpen = false;
   showToast("已退出登录");
   render();
@@ -777,13 +887,13 @@ async function supabaseTable(path, options = {}) {
   if (!(await refreshSessionIfNeeded())) {
     throw new Error("登录状态已失效，已自动退出。");
   }
-  const response = await fetch(`${state.auth.url}/rest/v1/${path}`, {
+  const response = await fetchWithTimeout(`${state.auth.url}/rest/v1/${path}`, {
     ...options,
     headers: {
       ...authHeaders(options.headers || {}),
       Prefer: options.prefer || "return=representation"
     }
-  });
+  }, options.timeoutMs || 15000);
   return readJsonResponse(response, "Supabase 请求失败。");
 }
 
@@ -824,6 +934,7 @@ function mapRemoteInterview(row, questions = []) {
     duration,
     result: normalizeInterviewResult(row.result),
     questions: questions.map((item) => ({
+      id: item.id || "",
       q: item.question || "",
       a: item.answer || "暂未填写回答。"
     }))
@@ -842,6 +953,7 @@ function mapRemoteOffer(row) {
     stability: Number(row.stability || 3),
     balance: Number(row.balance || 3),
     interest: Number(row.interest || 3),
+    customDimensions: Array.isArray(row.custom_dimensions) ? row.custom_dimensions : [],
     risk: row.risk || "暂无明显风险点。",
     decision: row.decision || "待决定"
   };
@@ -861,7 +973,7 @@ async function seedDemoWorkspaceIfNeeded() {
   const key = seedStorageKey();
   if (!key || localStorage.getItem(key) === "1") return false;
 
-  const demoJobs = jobs.map((job) => ({
+  const demoJobs = demoJobTemplates.map((job) => ({
     ...job,
     tags: [...job.tags],
     interviews: job.interviews.map((interview) => ({
@@ -892,9 +1004,9 @@ async function seedDemoWorkspaceIfNeeded() {
 async function loadRemoteWorkspace() {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
-  const payload = await fetch("/api/jobs", {
+  const payload = await fetchWithTimeout("/api/jobs", {
     headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
-  }).then((response) => readJsonResponse(response, "读取岗位失败。"));
+  }, 20000).then((response) => readJsonResponse(response, "读取岗位失败。"));
   const jobRows = payload.jobs || [];
   const interviewRows = payload.interviews || [];
   const questionRows = payload.questions || [];
@@ -926,9 +1038,17 @@ async function loadRemoteWorkspace() {
   );
 
   if (nextJobs.length) {
+    const previousActiveJobId = state.activeJobId;
+    const previousOfferSelection = [...state.offerSelection];
     jobs.splice(0, jobs.length, ...nextJobs);
-    state.activeJobId = nextJobs[0].id;
-    state.offerSelection = jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
+    state.activeJobId = nextJobs.some((job) => job.id === previousActiveJobId)
+      ? previousActiveJobId
+      : nextJobs[0].id;
+    const availableOfferIds = new Set(
+      jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id)
+    );
+    state.offerSelection = previousOfferSelection.filter((id) => availableOfferIds.has(id));
+    if (!state.offerSelection.length) state.offerSelection = [...availableOfferIds];
   } else {
     const seeded = await seedDemoWorkspaceIfNeeded();
     const key = seedStorageKey();
@@ -938,13 +1058,33 @@ async function loadRemoteWorkspace() {
       state.offerSelection = [];
     }
   }
+  saveWorkspaceCache();
+}
+
+function refreshWorkspaceInBackground() {
+  if (!isRemoteReady()) return Promise.resolve();
+  if (workspaceLoadPromise) return workspaceLoadPromise;
+  workspaceLoadPromise = Promise.all([
+    loadRemoteWorkspace(),
+    loadAiProvider().catch(() => null)
+  ])
+    .then(() => {
+      if (!state.booting) render({ scrollTop: window.scrollY || 0 });
+    })
+    .catch((error) => {
+      if (!state.booting) showToast(error instanceof Error ? error.message : "云端数据刷新失败");
+    })
+    .finally(() => {
+      workspaceLoadPromise = null;
+    });
+  return workspaceLoadPromise;
 }
 
 async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
   if (!(await refreshSessionIfNeeded())) return job;
   const salary = parseMoneyParts(job.salary, "");
-  const payload = await fetch("/api/jobs", {
+  const payload = await fetchWithTimeout("/api/jobs", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${state.auth.session.access_token}`,
@@ -965,7 +1105,7 @@ async function createRemoteJobFromDemo(job) {
       logo: normalizeLogoText(job.logo, job.company),
       logo_tone: job.logoTone
     })
-  }).then((response) => readJsonResponse(response, "岗位保存失败。"));
+  }, 15000).then((response) => readJsonResponse(response, "岗位保存失败。"));
   return mapRemoteJob(payload.job);
 }
 
@@ -1046,39 +1186,79 @@ async function persistLocalJobAsRemote(job) {
   return createdJob;
 }
 
-async function saveRemoteInterviewFromDemo(job, interview) {
+async function saveRemoteInterviewFromDemo(job, interview, previousInterview = null) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
   const roundParts = splitRoundName(interview.round, job.interviews.indexOf(interview));
-  const rows = await supabaseTable("interviews?select=id", {
-    method: "POST",
-    body: JSON.stringify({
-      user_id: state.auth.user.id,
-      job_id: job.id,
-      round_label: roundParts.label,
-      round_name: roundParts.name || "未命名面试",
-      time: interview.time === "时间待定" ? null : interview.time,
-      duration_minutes: parseDurationAmount(interview.duration),
-      result: interview.result
-    })
-  });
-  const interviewId = rows[0]?.id;
+  const interviewPayload = {
+    round_label: roundParts.label,
+    round_name: roundParts.name || "未命名面试",
+    time: interview.time === "时间待定" ? null : interview.time,
+    duration_minutes: parseDurationAmount(interview.duration),
+    result: interview.result
+  };
+  let interviewId = isUuid(interview.id) ? interview.id : "";
+
   if (interviewId) {
-    interview.id = interviewId;
-  }
-  if (interviewId && interview.questions.length) {
-    await supabaseTable("interview_questions", {
-      method: "POST",
-      prefer: "return=minimal",
-      body: JSON.stringify(interview.questions.map((item) => ({
-        user_id: state.auth.user.id,
-        interview_id: interviewId,
-        question: item.q,
-        answer: item.a
-      })))
+    await supabaseTable(`interviews?id=eq.${encodeURIComponent(interviewId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(interviewPayload),
+      prefer: "return=minimal"
     });
+  } else {
+    const rows = await supabaseTable("interviews?select=id", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: state.auth.user.id,
+        job_id: job.id,
+        ...interviewPayload
+      })
+    });
+    interviewId = rows[0]?.id || "";
+    if (interviewId) interview.id = interviewId;
   }
-  await updateRemoteJobFromDemo({ ...job, status: "面试中" });
+
+  if (interviewId) {
+    const existingQuestions = interview.questions.filter((item) => isUuid(item.id));
+    const newQuestions = interview.questions.filter((item) => !isUuid(item.id));
+    if (existingQuestions.length) {
+      await supabaseTable("interview_questions?on_conflict=id", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        body: JSON.stringify(existingQuestions.map((item) => ({
+          id: item.id,
+          user_id: state.auth.user.id,
+          interview_id: interviewId,
+          question: item.q,
+          answer: item.a
+        })))
+      });
+    }
+    if (newQuestions.length) {
+      const insertedQuestions = await supabaseTable("interview_questions?select=id", {
+        method: "POST",
+        body: JSON.stringify(newQuestions.map((item) => ({
+          user_id: state.auth.user.id,
+          interview_id: interviewId,
+          question: item.q,
+          answer: item.a
+        })))
+      });
+      newQuestions.forEach((item, index) => {
+        item.id = insertedQuestions[index]?.id || item.id;
+      });
+    }
+  }
+  const retainedIds = new Set(interview.questions.map((item) => item.id).filter(isUuid));
+  const removedIds = (previousInterview?.questions || [])
+    .map((item) => item.id)
+    .filter((id) => isUuid(id) && !retainedIds.has(id));
+  await Promise.all(removedIds.map((questionId) =>
+    supabaseTable(`interview_questions?id=eq.${encodeURIComponent(questionId)}`, {
+      method: "DELETE",
+      prefer: "return=minimal"
+    })
+  ));
 }
 
 async function patchRemoteInterviewFromDemo(interview, patch) {
@@ -1095,26 +1275,34 @@ async function saveRemoteOfferFromDemo(job) {
   if (!isRemoteReady() || !job.offer) return;
   if (!(await refreshSessionIfNeeded())) return;
   const total = parseMoneyParts(job.offer.totalComp, "w");
-  await supabaseTable("offers", {
+  const payload = {
+    user_id: state.auth.user.id,
+    job_id: job.id,
+    location: job.offer.location,
+    total_comp_amount: total.amount,
+    total_comp_unit: total.unit,
+    total_comp_display: job.offer.totalComp,
+    work_style: job.offer.workStyle,
+    growth: job.offer.growth,
+    stability: job.offer.stability,
+    balance: job.offer.balance,
+    interest: job.offer.interest,
+    custom_dimensions: offerCustomDimensions(job.offer),
+    risk: job.offer.risk,
+    decision: job.offer.decision
+  };
+  const saveOfferPayload = () => supabaseTable("offers", {
     method: "POST",
     prefer: "resolution=merge-duplicates,return=minimal",
-    body: JSON.stringify({
-      user_id: state.auth.user.id,
-      job_id: job.id,
-      location: job.offer.location,
-      total_comp_amount: total.amount,
-      total_comp_unit: total.unit,
-      total_comp_display: job.offer.totalComp,
-      work_style: job.offer.workStyle,
-      growth: job.offer.growth,
-      stability: job.offer.stability,
-      balance: job.offer.balance,
-      interest: job.offer.interest,
-      risk: job.offer.risk,
-      decision: job.offer.decision
-    })
+    body: JSON.stringify(payload)
   });
-  await updateRemoteJobFromDemo({ ...job, status: "已拿Offer" });
+  try {
+    await saveOfferPayload();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("custom_dimensions")) throw error;
+    delete payload.custom_dimensions;
+    await saveOfferPayload();
+  }
 }
 
 function activeInterview() {
@@ -2683,6 +2871,7 @@ function durationField(name, label, value, placeholder, unit) {
 function interviewQuestionFields(index, item = {}) {
   return `
     <section class="qa-pair" data-qa-pair>
+      <input type="hidden" name="questionId" value="${escapeHtml(item.id || "")}">
       <div class="qa-pair-title">问题 ${index + 1}</div>
       <label class="field qa-field">
         <span>面试问题</span>
@@ -3139,13 +3328,13 @@ async function recognizeRemoteJobImage(file) {
 
   const formData = new FormData();
   formData.append("image", file);
-  const response = await fetch("/api/jobs/recognize", {
+  const response = await fetchWithTimeout("/api/jobs/recognize", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${state.auth.session.access_token}`
     },
     body: formData
-  });
+  }, 60000);
   return readJsonResponse(response, "AI 识图失败。");
 }
 
@@ -3249,7 +3438,9 @@ async function handleLoginSubmit(signup = false) {
 async function loadAiProvider() {
   if (!isRemoteReady()) return null;
   if (!(await refreshSessionIfNeeded())) return null;
-  const response = await fetch("/api/me/ai-provider", { headers: { Authorization: `Bearer ${state.auth.session.access_token}` } });
+  const response = await fetchWithTimeout("/api/me/ai-provider", {
+    headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
+  }, 12000);
   const payload = await readJsonResponse(response, "读取 AI 设置失败。");
   state.aiProvider = payload.provider || null;
   return state.aiProvider;
@@ -3267,7 +3458,7 @@ async function saveAiProvider() {
     if (!(await refreshSessionIfNeeded())) {
       throw new Error("登录状态已失效，已自动退出。");
     }
-    const response = await fetch("/api/me/ai-provider", {
+    const response = await fetchWithTimeout("/api/me/ai-provider", {
       method: "PUT",
       headers: {
         Authorization: `Bearer ${state.auth.session.access_token}`,
@@ -3279,7 +3470,7 @@ async function saveAiProvider() {
         api_key: apiKey,
         supports_vision: Boolean(data.supportsVision)
       })
-    });
+    }, 15000);
     const payload = await readJsonResponse(response, "保存 AI 设置失败。");
     state.aiProvider = payload.provider;
     closeModal();
@@ -3295,10 +3486,10 @@ async function testAiProvider() {
     if (!(await refreshSessionIfNeeded())) {
       throw new Error("登录状态已失效，已自动退出。");
     }
-    const response = await fetch("/api/me/ai-provider/test", {
+    const response = await fetchWithTimeout("/api/me/ai-provider/test", {
       method: "POST",
       headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
-    });
+    }, 50000);
     await readJsonResponse(response, "AI 连接测试失败。");
     showToast("AI 连接测试通过");
   } catch (error) {
@@ -3318,6 +3509,7 @@ async function saveJob(editing = false) {
 
   if (editing) {
     const job = activeJob();
+    const previousJob = structuredClone(job);
     Object.assign(job, {
       company: data.company.trim(),
       title: data.title.trim(),
@@ -3339,6 +3531,8 @@ async function saveJob(editing = false) {
         await updateRemoteJobFromDemo(job);
       }
     } catch (error) {
+      Object.assign(job, previousJob);
+      syncJobData(job);
       state.modalError = error instanceof Error ? error.message : "岗位同步失败。";
       render();
       return;
@@ -3388,6 +3582,7 @@ async function saveQuickEdit() {
 
   const field = form.dataset.field;
   const data = Object.fromEntries(new FormData(form).entries());
+  const previousJob = structuredClone(job);
   if (field === "city") {
     job.city = String(data.quickValue || "").trim() || "未填写";
   } else if (field === "source") {
@@ -3405,8 +3600,10 @@ async function saveQuickEdit() {
       await updateRemoteJobFromDemo(job);
     }
   } catch (error) {
+    Object.assign(job, previousJob);
+    syncJobData(job);
     showToast(error instanceof Error ? error.message : "岗位同步失败。");
-    renderToast();
+    render({ scrollTop: window.scrollY || 0 });
     return;
   }
 
@@ -3461,6 +3658,10 @@ async function saveInterview() {
   }
 
   const job = activeJob();
+  const editingInterview = state.activeInterviewId
+    ? job.interviews.find((interview) => interview.id === state.activeInterviewId)
+    : null;
+  const questionIds = formData.getAll("questionId");
   const questions = formData.getAll("question");
   const answers = formData.getAll("answer");
   const duration = String(formData.get("duration") || "").trim();
@@ -3472,6 +3673,7 @@ async function saveInterview() {
     result: normalizeInterviewResult(String(formData.get("result") || "")),
     questions: questions
       .map((question, index) => ({
+        id: String(questionIds[index] || editingInterview?.questions?.[index]?.id || ""),
         q: String(question || "").trim(),
         a: String(answers[index] || "").trim() || "暂未填写回答。"
       }))
@@ -3479,6 +3681,11 @@ async function saveInterview() {
   };
 
   const existingIndex = job.interviews.findIndex((interview) => interview.id === state.activeInterviewId);
+  const previousInterviews = structuredClone(job.interviews);
+  const previousStatus = job.status;
+  const previousInterview = existingIndex >= 0
+    ? structuredClone(job.interviews[existingIndex])
+    : null;
   if (existingIndex >= 0) {
     job.interviews[existingIndex] = nextInterview;
   } else {
@@ -3486,10 +3693,21 @@ async function saveInterview() {
   }
 
   job.updated = "刚刚";
+  job.status = "面试中";
   try {
-    await saveRemoteInterviewFromDemo(job, nextInterview);
+    await saveRemoteInterviewFromDemo(job, nextInterview, previousInterview);
   } catch (error) {
+    job.interviews = previousInterviews;
+    job.status = previousStatus;
     state.modalError = error instanceof Error ? error.message : "面试同步失败。";
+    render();
+    return;
+  }
+  try {
+    await patchRemoteJobFromDemo(job, { status: job.status });
+  } catch (error) {
+    job.status = previousStatus;
+    state.modalError = `面试记录已保存，但岗位状态更新失败：${error instanceof Error ? error.message : "请重试"}`;
     render();
     return;
   }
@@ -3507,6 +3725,9 @@ async function saveOffer() {
   }
 
   const job = activeJob();
+  const previousOffer = job.offer ? structuredClone(job.offer) : null;
+  const previousStatus = job.status;
+  const previousOfferSelection = [...state.offerSelection];
   const customDimensionLabel = String(data.customDimensionLabel || "").trim();
   const customDimensionScore = Math.min(5, Math.max(1, Number(data.customDimensionScore || 3)));
   job.offer = {
@@ -3528,7 +3749,21 @@ async function saveOffer() {
   try {
     await saveRemoteOfferFromDemo(job);
   } catch (error) {
+    job.offer = previousOffer;
+    job.status = previousStatus;
+    state.offerSelection = previousOfferSelection;
+    syncJobData(job);
     state.modalError = error instanceof Error ? error.message : "Offer 同步失败。";
+    render();
+    return;
+  }
+  try {
+    await patchRemoteJobFromDemo(job, { status: job.status });
+  } catch (error) {
+    job.status = previousStatus;
+    state.offerSelection = previousOfferSelection;
+    syncJobData(job);
+    state.modalError = `Offer 已保存，但岗位状态更新失败：${error instanceof Error ? error.message : "请重试"}`;
     render();
     return;
   }
@@ -3549,6 +3784,7 @@ function saveOfferSelection() {
 
   state.offerSelection = selected;
   state.screen = "offers";
+  saveWorkspaceCache();
   closeModal();
   showToast("Offer 对比列表已更新");
 }
@@ -3580,6 +3816,27 @@ function updateOfferRating(input) {
   if (score) {
     score.textContent = offerScore(job.offer).toFixed(1);
   }
+
+  window.clearTimeout(offerSaveTimers.get(job.id));
+  offerSaveTimers.set(job.id, window.setTimeout(() => {
+    offerSaveTimers.delete(job.id);
+    const offerSnapshot = structuredClone(job.offer);
+    const previousSave = offerSaveQueues.get(job.id) || Promise.resolve();
+    const currentSave = previousSave.catch(() => null).then(async () => {
+      try {
+        await saveRemoteOfferFromDemo({ ...job, offer: offerSnapshot });
+        saveWorkspaceCache();
+        showToast("Offer 评分已保存");
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "Offer 评分保存失败");
+        void refreshWorkspaceInBackground();
+      }
+    });
+    offerSaveQueues.set(job.id, currentSave);
+    void currentSave.finally(() => {
+      if (offerSaveQueues.get(job.id) === currentSave) offerSaveQueues.delete(job.id);
+    });
+  }, 500));
 }
 
 async function markOfferWon() {
@@ -3645,16 +3902,17 @@ async function generateAiSummary() {
       if (!(await refreshSessionIfNeeded())) {
         throw new Error("登录状态已失效，已自动退出。");
       }
-      const response = await fetch(`/api/interviews/${job.interviews[0].id}/ai-summary/generate`, {
+      const response = await fetchWithTimeout(`/api/interviews/${job.interviews[0].id}/ai-summary/generate`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${state.auth.session.access_token}`,
           "content-type": "application/json"
         },
         body: JSON.stringify({ regenerate: false })
-      });
+      }, 60000);
       const payload = await readJsonResponse(response, "AI 总结失败。");
       job.aiSummary = payload.summary;
+      saveWorkspaceCache();
       state.aiLoading = false;
       showToast("AI 总结已生成");
       render();
@@ -3674,6 +3932,7 @@ async function generateAiSummary() {
       improvements: ["把优化结果量化", "准备接口失败和回滚案例", "补充监控指标和报警策略"],
       next: ["准备一个系统设计白板题", "复盘缓存和索引方案", "整理一段 2 分钟项目亮点表达"]
     };
+    saveWorkspaceCache();
     state.aiLoading = false;
     showToast("总结已生成");
     render();
@@ -3711,7 +3970,9 @@ async function withLoadingToast(key, message, operation) {
   pendingOperations.add(key);
   const stopLoading = showLoadingToast(message);
   try {
-    return await operation();
+    const result = await operation();
+    saveWorkspaceCache();
+    return result;
   } finally {
     pendingOperations.delete(key);
     stopLoading();
@@ -4673,21 +4934,24 @@ window.addEventListener("scroll", syncTopbarState, { passive: true });
 window.addEventListener("resize", syncDescriptionClampState, { passive: true });
 
 async function initApp() {
+  applyUrlState();
+  restoreRuntimeConfig();
+  restoreSession();
+  if (state.auth.session) restoreWorkspaceCache();
+  state.booting = false;
+  render();
+
   try {
     await loadRuntimeConfig();
-    restoreSession();
     if (isRemoteReady()) {
       const sessionReady = await refreshSessionIfNeeded({ force: sessionExpiresSoon() });
       if (sessionReady) {
-        await loadRemoteWorkspace();
-        await loadAiProvider().catch(() => null);
+        await refreshWorkspaceInBackground();
       }
     }
   } catch (error) {
     showToast(error instanceof Error ? error.message : "初始化失败，已进入 demo 模式");
   } finally {
-    state.booting = false;
-    applyUrlState();
     if (!state.auth.configured && !state.sharedJob && !state.shareInvalid) {
       showToast("Supabase 未配置，当前为本地 demo 模式");
     }
