@@ -995,6 +995,20 @@ async function updateRemoteJobFromDemo(job) {
   });
 }
 
+async function patchRemoteJobFromDemo(job, patch) {
+  if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
+  if (!isUuid(job.id)) {
+    await persistLocalJobAsRemote(job);
+    return;
+  }
+  await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+    prefer: "return=minimal"
+  });
+}
+
 async function deleteRemoteJobFromDemo(jobId) {
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
@@ -1065,6 +1079,16 @@ async function saveRemoteInterviewFromDemo(job, interview) {
     });
   }
   await updateRemoteJobFromDemo({ ...job, status: "面试中" });
+}
+
+async function patchRemoteInterviewFromDemo(interview, patch) {
+  if (!isRemoteReady() || !isUuid(interview.id)) return;
+  if (!(await refreshSessionIfNeeded())) return;
+  await supabaseTable(`interviews?id=eq.${encodeURIComponent(interview.id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+    prefer: "return=minimal"
+  });
 }
 
 async function saveRemoteOfferFromDemo(job) {
@@ -3558,14 +3582,25 @@ function updateOfferRating(input) {
   }
 }
 
-function markOfferWon() {
+async function markOfferWon() {
   const job = activeJob();
+  const previousStatus = job.status;
+  const previousOfferSelection = [...state.offerSelection];
   job.status = "已拿Offer";
   job.updated = "刚刚";
   syncJobData(job);
-  showToast("状态已更新为已拿Offer");
   render();
-  triggerOfferCelebration(job.company);
+  try {
+    await patchRemoteJobFromDemo(job, { status: job.status });
+    showToast("状态已保存为已拿 Offer");
+    triggerOfferCelebration(job.company);
+  } catch (error) {
+    job.status = previousStatus;
+    state.offerSelection = previousOfferSelection;
+    syncJobData(job);
+    showToast(error instanceof Error ? error.message : "Offer 状态保存失败");
+    render();
+  }
 }
 
 function triggerOfferCelebration(company) {
@@ -3752,25 +3787,56 @@ function applyCustomSelectValue(select, value) {
   if (select.hasAttribute("data-job-status-select")) {
     const job = jobs.find((item) => item.id === select.dataset.jobId);
     if (job) {
+      const saveKey = `job-status-${job.id}`;
+      if (pendingOperations.has(saveKey)) {
+        setCustomSelectValue(select, job.status);
+        showToast("投递状态正在保存，请稍候");
+        return;
+      }
+      const previousStatus = job.status;
+      const previousOfferSelection = [...state.offerSelection];
       job.status = normalizeJobStatus(value);
       job.updated = "刚刚";
       syncJobData(job);
-      showToast("投递状态已更新");
       render();
+      void withLoadingToast(saveKey, "正在保存投递状态...", async () => {
+        try {
+          await patchRemoteJobFromDemo(job, { status: job.status });
+          showToast("投递状态已保存");
+        } catch (error) {
+          job.status = previousStatus;
+          state.offerSelection = previousOfferSelection;
+          syncJobData(job);
+          showToast(error instanceof Error ? error.message : "投递状态保存失败");
+          render();
+        }
+      });
     }
   }
 
   if (select.hasAttribute("data-job-priority-select")) {
     const job = jobs.find((item) => item.id === select.dataset.jobId);
     if (job) {
+      const saveKey = `job-priority-${job.id}`;
+      if (pendingOperations.has(saveKey)) {
+        setCustomSelectValue(select, job.priority);
+        showToast("优先级正在保存，请稍候");
+        return;
+      }
+      const previousPriority = job.priority;
       job.priority = normalizePriority(value);
       job.updated = "刚刚";
-      void updateRemoteJobFromDemo(job).catch((error) => {
-        showToast(error instanceof Error ? error.message : "优先级同步失败");
-        renderToast();
-      });
-      showToast("优先级已更新");
       render();
+      void withLoadingToast(saveKey, "正在保存优先级...", async () => {
+        try {
+          await patchRemoteJobFromDemo(job, { priority: job.priority });
+          showToast("优先级已保存");
+        } catch (error) {
+          job.priority = previousPriority;
+          showToast(error instanceof Error ? error.message : "优先级保存失败");
+          render();
+        }
+      });
     }
   }
 
@@ -3778,10 +3844,26 @@ function applyCustomSelectValue(select, value) {
     const job = activeJob();
     const interview = job.interviews.find((item) => item.id === select.dataset.interviewId);
     if (interview) {
+      const saveKey = `interview-result-${interview.id}`;
+      if (pendingOperations.has(saveKey)) {
+        setCustomSelectValue(select, interview.result);
+        showToast("面试结果正在保存，请稍候");
+        return;
+      }
+      const previousResult = interview.result;
       interview.result = normalizeInterviewResult(value);
       job.updated = "刚刚";
-      showToast("面试情况已更新");
       render();
+      void withLoadingToast(saveKey, "正在保存面试结果...", async () => {
+        try {
+          await patchRemoteInterviewFromDemo(interview, { result: interview.result });
+          showToast("面试结果已保存");
+        } catch (error) {
+          interview.result = previousResult;
+          showToast(error instanceof Error ? error.message : "面试结果保存失败");
+          render();
+        }
+      });
     }
   }
 }
@@ -4395,7 +4477,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "mark-offer-won") {
-    markOfferWon();
+    void withLoadingToast(`job-status-${activeJob()?.id || ""}`, "正在保存 Offer 状态...", markOfferWon);
     return;
   }
 
@@ -4515,12 +4597,32 @@ document.addEventListener("drop", (event) => {
   };
   const jobId = event.dataTransfer.getData("text/plain");
   const status = dropTarget.dataset.funnelDropStatus;
+  const job = jobs.find((item) => item.id === jobId);
+  const saveKey = `job-status-${jobId}`;
   clearDragTargets();
   state.lastDragAt = Date.now();
 
+  if (pendingOperations.has(saveKey)) {
+    showToast("投递状态正在保存，请稍候");
+    return;
+  }
+
+  const previousStatus = job?.status;
+  const previousOfferSelection = [...state.offerSelection];
   if (moveJobToStatus(jobId, status)) {
-    showToast(`已移动到${statusMeta[status]?.title || status}`);
     render({ funnelScroll });
+    void withLoadingToast(saveKey, "正在保存投递状态...", async () => {
+      try {
+        await patchRemoteJobFromDemo(job, { status: job.status });
+        showToast(`已移动到${statusMeta[status]?.title || status}`);
+      } catch (error) {
+        job.status = previousStatus;
+        state.offerSelection = previousOfferSelection;
+        syncJobData(job);
+        showToast(error instanceof Error ? error.message : "投递状态保存失败");
+        render({ funnelScroll });
+      }
+    });
   }
 });
 
