@@ -137,7 +137,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params, 
       entity_type: "interview",
       entity_id: interview.id,
       properties: { generation_id: generationId, prompt_version_id: promptVersion?.id || "ai_summary_action_v1" }
-    }));
+    })));
 
     return json({
       generation_id: generationId,
