@@ -5203,3 +5203,295 @@ body.is-scrolled .topbar-subtitle {
     padding: 12px 14px;
   }
 }
+
+/* Dashboard collections keep their natural height and only scroll after five items. */
+.dashboard-interview-card,
+.dashboard-review-card {
+  min-height: 0;
+  align-content: start;
+}
+
+.dashboard-interview-list,
+.dashboard-review-list {
+  display: grid;
+  gap: 10px;
+  max-height: none;
+  overflow: visible;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--outline-variant) transparent;
+}
+
+.dashboard-interview-list.is-scrollable,
+.dashboard-review-list.is-scrollable {
+  max-height: 390px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dashboard-review-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-low);
+  color: var(--on-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 200ms var(--motion-pop), background-color 180ms var(--motion-soft), box-shadow 180ms var(--motion-soft);
+}
+
+.dashboard-review-item:hover,
+.dashboard-review-item:focus-visible {
+  background: var(--surface-lowest);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-2px);
+  outline: 0;
+}
+
+.dashboard-review-copy,
+.dashboard-review-copy strong,
+.dashboard-review-copy span {
+  min-width: 0;
+  display: block;
+}
+
+.dashboard-review-copy strong,
+.dashboard-review-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-review-copy strong {
+  font-size: 14px;
+  font-weight: 950;
+}
+
+.dashboard-review-copy span {
+  margin-top: 4px;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dashboard-interview-list::-webkit-scrollbar,
+.dashboard-review-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-interview-list::-webkit-scrollbar-thumb,
+.dashboard-review-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--outline-variant);
+}
+
+/* Illustrated empty states are shared by the job board, detail and offer pages. */
+.page-empty-card {
+  min-height: min(520px, calc(100dvh - 190px));
+  display: grid;
+  place-items: center;
+}
+
+.empty-state {
+  width: min(100%, 560px);
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 18px;
+  margin-inline: auto;
+  padding: clamp(28px, 5vw, 56px);
+  text-align: center;
+}
+
+.empty-state.compact {
+  min-height: 180px;
+  gap: 12px;
+  padding: 18px;
+}
+
+.empty-illustration {
+  position: relative;
+  width: 132px;
+  height: 104px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--outline-variant);
+  border-radius: 44px;
+  background: var(--surface-low);
+  color: var(--primary);
+  overflow: hidden;
+}
+
+.empty-state.compact .empty-illustration {
+  width: 78px;
+  height: 64px;
+  border-radius: 26px;
+}
+
+.empty-illustration > .material-symbols-outlined {
+  position: relative;
+  z-index: 1;
+  font-size: 48px;
+  font-variation-settings: "FILL" 1, "wght" 650, "GRAD" 0, "opsz" 48;
+}
+
+.empty-state.compact .empty-illustration > .material-symbols-outlined {
+  font-size: 32px;
+}
+
+.empty-orbit {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--primary-container);
+}
+
+.empty-orbit.orbit-one {
+  width: 52px;
+  height: 52px;
+  top: -18px;
+  right: -8px;
+}
+
+.empty-orbit.orbit-two {
+  width: 24px;
+  height: 24px;
+  bottom: 10px;
+  left: 12px;
+  background: var(--secondary-container);
+}
+
+.empty-copy h2 {
+  font-size: clamp(20px, 2vw, 28px);
+}
+
+.empty-copy p {
+  max-width: 460px;
+  margin-top: 6px;
+  color: var(--on-surface-variant);
+  font-weight: 750;
+  line-height: 1.65;
+}
+
+.empty-state.compact .empty-copy h2 {
+  font-size: 17px;
+}
+
+.empty-state.compact .empty-copy p {
+  font-size: 13px;
+}
+
+/* Priority is deliberately a small visual signal on dense job and funnel cards. */
+.priority-dot {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  flex: 0 0 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--surface-lowest), 0 2px 7px rgba(63, 55, 22, 0.2);
+}
+
+.priority-dot.priority-high {
+  background: #ef646d;
+}
+
+.priority-dot.priority-medium {
+  background: #e7b900;
+}
+
+.priority-dot.priority-low {
+  background: #a4a19a;
+}
+
+.job-footer .priority-dot {
+  margin-left: auto;
+}
+
+.funnel-job-card .priority-dot,
+.funnel-list-row .priority-dot,
+.job-list-row .priority-dot {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+}
+
+.mini-funnel-jobs button {
+  position: relative;
+  padding-right: 30px;
+}
+
+.mini-funnel-jobs .priority-dot {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 2px var(--surface-lowest), 0 1px 4px rgba(63, 55, 22, 0.2);
+}
+
+.priority-chip.priority-medium .material-symbols-outlined,
+.hero-card .priority-quick.priority-medium .custom-select-trigger::before {
+  color: #725a00;
+}
+
+@media (min-width: 1181px) {
+  .screen-dashboard .bento-grid {
+    min-height: clamp(620px, calc(100dvh - 250px), 900px);
+    grid-template-rows: minmax(340px, 1fr) auto;
+    align-items: start;
+  }
+
+  .screen-dashboard .dashboard-funnel-card {
+    height: 100%;
+  }
+
+  .screen-dashboard .dashboard-interview-card,
+  .screen-dashboard .dashboard-review-card {
+    height: auto;
+    align-self: start;
+  }
+
+  .screen-dashboard .dashboard-review-card {
+    display: block;
+  }
+
+  .screen-dashboard .dashboard-interview-list,
+  .screen-dashboard .dashboard-review-list {
+    max-height: none;
+  }
+
+  .screen-dashboard .dashboard-interview-list.is-scrollable,
+  .screen-dashboard .dashboard-review-list.is-scrollable {
+    max-height: 390px;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-interview-list.is-scrollable,
+  .dashboard-review-list.is-scrollable {
+    max-height: 340px;
+  }
+
+  .page-empty-card {
+    min-height: calc(100dvh - 250px);
+  }
+
+  .empty-state {
+    min-height: 300px;
+    padding: 24px 18px;
+  }
+
+  .empty-state.compact {
+    min-height: 154px;
+    padding: 12px;
+  }
+
+  .empty-illustration {
+    width: 108px;
+    height: 86px;
+  }
+}

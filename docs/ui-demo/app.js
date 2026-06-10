@@ -307,6 +307,7 @@ const demoJobTemplates = structuredClone(jobs);
 
 const state = {
   screen: "dashboard",
+  detailReturnScreen: "jobs",
   activeJobId: "job-bd",
   sidebarCollapsed: false,
   filters: {
@@ -965,7 +966,8 @@ function mapRemoteSummary(row) {
     overview: row.overview || "",
     strengths: Array.isArray(row.strengths) ? row.strengths : [],
     improvements: Array.isArray(row.improvements) ? row.improvements : [],
-    next: Array.isArray(row.next) ? row.next : []
+    next: Array.isArray(row.next) ? row.next : [],
+    createdAt: row.created_at || ""
   };
 }
 
@@ -1700,7 +1702,8 @@ function renderDashboard() {
   const applied = jobs.filter((job) => job.status === "已投递");
   const interviewing = jobs.filter((job) => job.status === "面试中");
   const offers = jobOffers();
-  const reviewJob = jobs.find((job) => job.aiSummary) || jobs.find((job) => job.interviews.length) || jobs[0];
+  const interviewItems = dashboardInterviewItems();
+  const reviewJobs = dashboardReviewJobs();
 
   return `
     <section class="grid metric-grid">
@@ -1724,28 +1727,39 @@ function renderDashboard() {
           <h2>近期面试</h2>
           <span class="text-link" data-action="nav" data-screen="jobs">查看全部</span>
         </div>
-        <div class="stack dashboard-interview-list">
-          ${interviewing.map((job) => dataRow(job.company, `${job.title} · ${job.nextInterview}`, badge(job.status), `data-action="select-job" data-job-id="${job.id}"`)).join("")}
-          ${interviewing.length ? "" : emptyInline("还没有面试安排")}
-        </div>
+        ${interviewItems.length ? `
+          <div class="stack dashboard-interview-list ${interviewItems.length > 5 ? "is-scrollable" : ""}">
+            ${interviewItems.map(({ job, interview }) =>
+              dataRow(
+                job.company,
+                `${job.title} · ${interview.round} · ${interview.time}`,
+                badge(interview.result),
+                `data-action="select-job" data-job-id="${job.id}"`
+              )
+            ).join("")}
+          </div>
+        ` : emptyState("event_busy", "暂无近期面试", "添加面试记录后，会按时间由近及远显示在这里。", "", true)}
       </article>
 
       <article class="card card-pad panel-list dashboard-review-card" id="follow-up-section">
         <div class="section-head">
-          <h2>最近一次面试复盘</h2>
+          <h2>面试复盘</h2>
           <span class="badge ai-chip">复盘</span>
         </div>
-        <div class="dashboard-review-body">
-          <span class="logo-tile compact ${reviewJob.logoTone}">${escapeHtml(reviewJob.logo)}</span>
-          <div>
-            <h3>${escapeHtml(reviewJob.company)} · ${escapeHtml(reviewJob.title)}</h3>
-            <p>${escapeHtml(reviewJob.aiSummary?.overview || "当前岗位还没有总结。记录面试问题和回答后，可以生成结构化复盘。")}</p>
-            <div class="tag-row">
-              ${(reviewJob.aiSummary?.next || ["补充面试问题", "记录回答重点", "生成复盘"]).slice(0, 3).map((item) => `<span class="badge todo">${escapeHtml(item)}</span>`).join("")}
-            </div>
+        ${reviewJobs.length ? `
+          <div class="dashboard-review-list ${reviewJobs.length > 5 ? "is-scrollable" : ""}">
+            ${reviewJobs.map((job) => `
+              <button class="dashboard-review-item" type="button" data-action="select-job" data-job-id="${job.id}">
+                <span class="logo-tile compact ${job.logoTone}">${escapeHtml(job.logo)}</span>
+                <span class="dashboard-review-copy">
+                  <strong>${escapeHtml(job.company)} · ${escapeHtml(job.title)}</strong>
+                  <span>${escapeHtml(job.aiSummary.overview || "已生成面试复盘，点击查看详情。")}</span>
+                </span>
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </button>
+            `).join("")}
           </div>
-          <div>${button(reviewJob.aiSummary ? "查看复盘" : "进入详情", "select-job", "dark", `data-job-id="${reviewJob.id}"`)}</div>
-        </div>
+        ` : emptyState("rate_review", "暂无面试复盘", "记录面试问答并生成总结后，复盘会从新到旧排列。", "", true)}
       </article>
     </section>
   `;
@@ -1767,13 +1781,14 @@ function renderDashboardFunnel() {
             </div>
             <div class="mini-funnel-jobs">
               ${items.map((job) => `
-                <button type="button" draggable="true" data-action="select-job" data-job-id="${job.id}" data-drag-job-id="${job.id}">
-                  <span>
-                    <strong>${escapeHtml(job.company)}</strong>
-                    <small>${escapeHtml(job.title)}</small>
-                    <em>${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</em>
-                  </span>
-                </button>
+                 <button type="button" draggable="true" data-action="select-job" data-job-id="${job.id}" data-drag-job-id="${job.id}">
+                   <span>
+                     <strong>${escapeHtml(job.company)}</strong>
+                     <small>${escapeHtml(job.title)}</small>
+                     <em>${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</em>
+                   </span>
+                   ${priorityDot(job.priority)}
+                 </button>
               `).join("")}
               ${items.length ? "" : `<span class="mini-empty">暂无</span>`}
             </div>
@@ -1813,6 +1828,85 @@ function emptyInline(text) {
   return `<div class="empty-dash">${escapeHtml(text)}</div>`;
 }
 
+function emptyState(icon, title, description, actionHtml = "", compact = false) {
+  return `
+    <section class="empty-state${compact ? " compact" : ""}">
+      <div class="empty-illustration" aria-hidden="true">
+        <span class="empty-orbit orbit-one"></span>
+        <span class="empty-orbit orbit-two"></span>
+        <span class="material-symbols-outlined">${icon}</span>
+      </div>
+      <div class="empty-copy">
+        <h2>${escapeHtml(title)}</h2>
+        <p>${escapeHtml(description)}</p>
+      </div>
+      ${actionHtml ? `<div class="empty-action">${actionHtml}</div>` : ""}
+    </section>
+  `;
+}
+
+function priorityDot(priority) {
+  const normalized = normalizePriority(priority);
+  return `<span class="priority-dot ${priorityTone(normalized)}" role="img" aria-label="${escapeHtml(normalized)}优先级" title="${escapeHtml(normalized)}优先级"></span>`;
+}
+
+function scheduleTimestamp(value) {
+  const text = String(value || "").trim();
+  if (!text || text === "时间待定" || text === "暂无") return Number.NaN;
+  const direct = Date.parse(text.replace(" ", "T"));
+  if (!Number.isNaN(direct)) return direct;
+
+  const relative = text.match(/^(今天|明天|后天)\s*(\d{1,2})?:?(\d{2})?/);
+  if (relative) {
+    const date = new Date();
+    const offset = relative[1] === "明天" ? 1 : relative[1] === "后天" ? 2 : 0;
+    date.setDate(date.getDate() + offset);
+    date.setHours(Number(relative[2] || 9), Number(relative[3] || 0), 0, 0);
+    return date.getTime();
+  }
+  return Number.NaN;
+}
+
+function latestInterviewTimestamp(job) {
+  const timestamps = (job.interviews || [])
+    .map((interview) => scheduleTimestamp(interview.time))
+    .filter(Number.isFinite);
+  return timestamps.length ? Math.max(...timestamps) : 0;
+}
+
+function dashboardInterviewItems() {
+  const now = Date.now();
+  const items = jobs.flatMap((job) =>
+    (job.interviews || []).map((interview) => ({
+      job,
+      interview,
+      timestamp: scheduleTimestamp(interview.time)
+    }))
+  );
+  return items.sort((a, b) => {
+    const aKnown = Number.isFinite(a.timestamp);
+    const bKnown = Number.isFinite(b.timestamp);
+    if (aKnown !== bKnown) return aKnown ? -1 : 1;
+    if (!aKnown) return 0;
+    const aUpcoming = a.timestamp >= now;
+    const bUpcoming = b.timestamp >= now;
+    if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+    return aUpcoming ? a.timestamp - b.timestamp : b.timestamp - a.timestamp;
+  });
+}
+
+function dashboardReviewJobs() {
+  return jobs
+    .filter((job) => job.aiSummary)
+    .sort((a, b) => {
+      const aCreated = scheduleTimestamp(a.aiSummary?.createdAt);
+      const bCreated = scheduleTimestamp(b.aiSummary?.createdAt);
+      const aTime = Number.isFinite(aCreated) ? aCreated : latestInterviewTimestamp(a);
+      const bTime = Number.isFinite(bCreated) ? bCreated : latestInterviewTimestamp(b);
+      return bTime - aTime;
+    });
+}
+
 function filteredJobs() {
   const query = state.filters.query.trim().toLowerCase();
   const filtered = jobs.filter((job) => {
@@ -1845,9 +1939,16 @@ function renderJobs() {
   const currentViewIcon = state.filters.view === "list" ? "view_list" : "view_module";
   const nextView = state.filters.view === "list" ? "board" : "list";
   const nextViewLabel = state.filters.view === "list" ? "切换到看板视图" : "切换到列表视图";
-  const shownContent = state.filters.funnel
-    ? renderFunnelJobs(list)
-    : state.filters.view === "list" ? renderJobsList(list) : `
+  const shownContent = !list.length
+    ? emptyState(
+        jobs.length ? "search_off" : "work_off",
+        jobs.length ? "没有匹配的岗位" : "岗位看板还是空的",
+        jobs.length ? "调整搜索词或筛选条件，再看看其他岗位。" : "添加第一个岗位，开始记录投递、面试和 Offer 进展。",
+        jobs.length ? button("清除筛选", "reset-job-filters", "surface") : button("新增岗位", "open-job-modal")
+      )
+    : state.filters.funnel
+      ? renderFunnelJobs(list)
+      : state.filters.view === "list" ? renderJobsList(list) : `
       <section class="grid jobs-grid">
         ${list.map((job) => renderJobCard(job)).join("")}
         <button class="add-card" type="button" data-action="open-job-modal">
@@ -1894,7 +1995,6 @@ function renderJobs() {
     <div class="jobs-content-transition ${state.funnelTransition ? `funnel-${state.funnelTransition}` : ""}">
       ${shownContent}
     </div>
-    ${list.length ? "" : emptyInline("没有匹配的岗位，调整筛选条件再试试。")}
   `;
 }
 
@@ -1990,6 +2090,7 @@ function renderFunnelJobCard(job) {
       <div class="tag-row">
         ${job.tags.slice(0, 3).map((tag) => `<span class="badge todo">${escapeHtml(tag)}</span>`).join("")}
       </div>
+      ${priorityDot(job.priority)}
     </article>
   `;
 }
@@ -2030,10 +2131,7 @@ function renderFunnelListRow(job) {
         <small>${escapeHtml(job.company)} · ${escapeHtml(job.city)} · ${escapeHtml(job.salary)}</small>
       </span>
       <span class="job-list-meta">${escapeHtml(job.updated)} 更新</span>
-      <span class="priority-chip ${priorityTone(job.priority)}">
-        <span class="material-symbols-outlined" aria-hidden="true">star</span>
-        ${escapeHtml(job.priority)} 优先级
-      </span>
+      ${priorityDot(job.priority)}
     </article>
   `;
 }
@@ -2050,10 +2148,7 @@ function renderJobsList(list) {
           </span>
           <span class="job-list-meta">${escapeHtml(job.updated)} 更新</span>
           <span class="job-list-status">${badge(job.status)}</span>
-          <span class="priority-chip ${priorityTone(job.priority)}">
-            <span class="material-symbols-outlined" aria-hidden="true">star</span>
-            ${escapeHtml(job.priority)} 优先级
-          </span>
+          ${priorityDot(job.priority)}
         </button>
       `).join("")}
     </section>
@@ -2092,10 +2187,7 @@ function renderJobCard(job) {
           <div class="salary-label">薪资范围</div>
           <div class="salary">${escapeHtml(job.salary)}</div>
         </div>
-        <span class="priority-chip ${priorityTone(job.priority)}">
-          <span class="material-symbols-outlined" aria-hidden="true">star</span>
-          ${escapeHtml(job.priority)} 优先级
-        </span>
+        ${priorityDot(job.priority)}
       </footer>
     </article>
   `;
@@ -2121,9 +2213,8 @@ function renderDetail() {
       "岗位详情",
       "岗位详情、面试记录和总结沉淀在同一页。"
     ) + `
-      <section class="card card-pad">
-        ${emptyInline("还没有岗位记录，先新增一个岗位。")}
-        <div style="margin-top: 20px;">${button("新增岗位", "open-job-modal")}</div>
+      <section class="card card-pad page-empty-card">
+        ${emptyState("description", "暂无岗位详情", "先添加一个岗位，之后可以在这里维护岗位信息、面试记录和 AI 复盘。", button("新增岗位", "open-job-modal"))}
       </section>
     `;
   }
@@ -2469,6 +2560,25 @@ function renderAiCard(job) {
 
 function renderOffers() {
   const offers = selectedOfferJobs();
+  if (!offers.length) {
+    const availableOffers = jobOffers();
+    const action = availableOffers.length
+      ? button("选择已有 Offer", "open-offer-select-modal")
+      : button("前往岗位看板", "nav", "surface", `data-screen="jobs"`);
+    return pageHeader(
+      "Offer 对比",
+      "从薪资、成长、稳定性和偏好横向比较 Offer。"
+    ) + `
+      <section class="card card-pad page-empty-card">
+        ${emptyState(
+          "balance",
+          availableOffers.length ? "还没有选择对比项" : "暂无可对比的 Offer",
+          availableOffers.length ? "选择 2-5 个已有 Offer，开始横向比较。" : "将岗位状态更新为“已拿 Offer”后，就能在这里进行对比。",
+          action
+        )}
+      </section>
+    `;
+  }
   const best = offers.reduce((winner, job) => (offerScore(job.offer) > offerScore(winner.offer) ? job : winner), offers[0] || null);
   const showAddCard = offers.length < 5;
   const gridCount = Math.max(1, offers.length + (showAddCard ? 1 : 0));
@@ -2487,7 +2597,7 @@ function renderOffers() {
         </span>
       </button>` : ""}
     </section>
-    ${offers.length ? renderDecisionSection(best, offers) : emptyInline("还没有选择 Offer，选择后即可进行横向比较。")}
+    ${renderDecisionSection(best, offers)}
   `;
 }
 
@@ -4161,6 +4271,11 @@ function navigateTo(screen, { restore = false } = {}) {
   if (!screen || !screenMapHas(screen)) return;
 
   rememberScroll();
+  if (screen === "detail" && state.screen !== "detail") {
+    state.detailReturnScreen = ["dashboard", "jobs", "offers"].includes(state.screen)
+      ? state.screen
+      : "jobs";
+  }
   state.screen = screen;
   state.jobSwitchDirection = "";
   render({ scrollTop: restore ? state.scrollPositions[screen] || 0 : 0 });
@@ -4217,10 +4332,18 @@ function sidebarMenuMeta() {
 }
 
 function navUpMeta() {
+  const detailTarget = ["dashboard", "jobs", "offers"].includes(state.detailReturnScreen)
+    ? state.detailReturnScreen
+    : "jobs";
+  const detailLabels = {
+    dashboard: "返回求职主页",
+    jobs: "返回岗位看板",
+    offers: "返回 Offer 对比"
+  };
   const map = {
     dashboard: { target: "", icon: "dashboard", label: "已在最高层级" },
     jobs: { target: "dashboard", icon: "arrow_back", label: "返回求职主页" },
-    detail: { target: "jobs", icon: "arrow_back", label: "返回岗位看板" },
+    detail: { target: detailTarget, icon: "arrow_back", label: detailLabels[detailTarget] },
     offers: { target: "jobs", icon: "arrow_back", label: "返回岗位看板" }
   };
   return map[state.screen] || map.dashboard;
@@ -4613,6 +4736,17 @@ document.addEventListener("click", (event) => {
     state.filters.query = "";
     state.funnelPanelOpen = false;
     render();
+    return;
+  }
+
+  if (action === "reset-job-filters") {
+    state.filters.query = "";
+    state.filters.status = "全部";
+    state.filters.city = "全部";
+    state.filters.priority = "全部";
+    state.filters.sort = "投递进度";
+    state.funnelPanelOpen = false;
+    render({ scrollTop: 0 });
     return;
   }
 
