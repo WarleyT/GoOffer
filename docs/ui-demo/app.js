@@ -304,6 +304,8 @@ const jobs = [
   }
 ];
 const demoJobTemplates = structuredClone(jobs);
+const legacyPreviewCleanupVersion = "v2";
+const workspaceCacheVersion = 2;
 
 const state = {
   screen: "dashboard",
@@ -365,6 +367,7 @@ const pendingOperations = new Set();
 const offerSaveTimers = new Map();
 const offerSaveQueues = new Map();
 let workspaceLoadPromise = null;
+let touchDrag = null;
 const authStorageKey = "gooffer.supabase.session";
 const runtimeConfigStorageKey = "gooffer.runtime.config";
 
@@ -394,6 +397,7 @@ function saveWorkspaceCache() {
   if (!key) return;
   try {
     localStorage.setItem(key, JSON.stringify({
+      version: workspaceCacheVersion,
       jobs,
       activeJobId: state.activeJobId,
       offerSelection: state.offerSelection,
@@ -409,16 +413,21 @@ function restoreWorkspaceCache() {
   if (!key) return false;
   try {
     const cached = JSON.parse(localStorage.getItem(key) || "null");
-    if (!cached || !Array.isArray(cached.jobs)) return false;
-    const restoredJobs = cached.jobs.map((job) => ({
-      ...job,
-      status: normalizeJobStatus(job.status),
-      priority: normalizePriority(job.priority),
-      tags: Array.isArray(job.tags) ? job.tags : [],
-      interviews: Array.isArray(job.interviews) ? job.interviews : [],
-      offer: job.offer || null,
-      aiSummary: job.aiSummary || null
-    }));
+    if (!cached || cached.version !== workspaceCacheVersion || !Array.isArray(cached.jobs)) {
+      localStorage.removeItem(key);
+      return false;
+    }
+    const restoredJobs = cached.jobs
+      .filter((job) => !isLegacyPreviewJob(job))
+      .map((job) => ({
+        ...job,
+        status: normalizeJobStatus(job.status),
+        priority: normalizePriority(job.priority),
+        tags: Array.isArray(job.tags) ? job.tags : [],
+        interviews: Array.isArray(job.interviews) ? job.interviews : [],
+        offer: job.offer || null,
+        aiSummary: job.aiSummary || null
+      }));
     jobs.splice(0, jobs.length, ...restoredJobs);
     state.activeJobId = restoredJobs.some((job) => job.id === cached.activeJobId)
       ? cached.activeJobId
@@ -454,8 +463,29 @@ function restoreRuntimeConfig() {
   }
 }
 
-function seedStorageKey() {
-  return state.auth.user?.id ? `gooffer.demo.seeded.${state.auth.user.id}` : "";
+function legacySeedStorageKey(userId = state.auth.user?.id) {
+  return userId ? `gooffer.demo.seeded.${userId}` : "";
+}
+
+function legacyPreviewCleanupKey(userId = state.auth.user?.id) {
+  return userId ? `gooffer.preview.cleanup.${legacyPreviewCleanupVersion}.${userId}` : "";
+}
+
+function normalizedPreviewSignature(job) {
+  return [
+    String(job?.company || "").trim().toLowerCase(),
+    String(job?.title || "").trim().toLowerCase(),
+    String(job?.city || "").trim().toLowerCase(),
+    String(job?.source || "").trim().toLowerCase(),
+    String(job?.description || "").trim().toLowerCase()
+  ].join("|");
+}
+
+const legacyPreviewSignatures = new Set(demoJobTemplates.map(normalizedPreviewSignature));
+
+function isLegacyPreviewJob(job) {
+  if (!job) return false;
+  return legacyPreviewSignatures.has(normalizedPreviewSignature(job));
 }
 
 function currentUserEmail() {
@@ -574,11 +604,9 @@ async function signIn(email, password) {
   }, 15000);
   const payload = await readJsonResponse(response, "登录失败，请检查邮箱和密码。");
   saveSession(payload);
-  if (!restoreWorkspaceCache()) {
-    jobs.splice(0, jobs.length);
-    state.activeJobId = "";
-    state.offerSelection = [];
-  }
+  jobs.splice(0, jobs.length);
+  state.activeJobId = "";
+  state.offerSelection = [];
   void refreshWorkspaceInBackground();
 }
 
@@ -591,11 +619,9 @@ async function signUp(email, password) {
   const payload = await readJsonResponse(response, "注册失败，请稍后再试。");
   if (payload.access_token) {
     saveSession(payload);
-    if (!restoreWorkspaceCache()) {
-      jobs.splice(0, jobs.length);
-      state.activeJobId = "";
-      state.offerSelection = [];
-    }
+    jobs.splice(0, jobs.length);
+    state.activeJobId = "";
+    state.offerSelection = [];
     void refreshWorkspaceInBackground();
     return "signed-in";
   } else {
@@ -971,36 +997,22 @@ function mapRemoteSummary(row) {
   };
 }
 
-async function seedDemoWorkspaceIfNeeded() {
-  const key = seedStorageKey();
-  if (!key || localStorage.getItem(key) === "1") return false;
+async function removeLegacyPreviewJobs(jobRows) {
+  const cleanupKey = legacyPreviewCleanupKey();
+  const legacyRows = jobRows.filter(isLegacyPreviewJob);
+  if (legacyRows.length) {
+    await Promise.all(legacyRows
+      .filter((row) => isUuid(row.id))
+      .map((row) => supabaseTable(`jobs?id=eq.${encodeURIComponent(row.id)}`, {
+        method: "DELETE",
+        prefer: "return=minimal"
+      })));
+  }
 
-  const demoJobs = demoJobTemplates.map((job) => ({
-    ...job,
-    tags: [...job.tags],
-    interviews: job.interviews.map((interview) => ({
-      ...interview,
-      questions: interview.questions.map((question) => ({ ...question }))
-    })),
-    offer: job.offer ? { ...job.offer } : null,
-    aiSummary: job.aiSummary ? { ...job.aiSummary } : null
-  }));
-
-  const seededJobs = await Promise.all(demoJobs.map(async (demoJob) => {
-    const createdJob = await createRemoteJobFromDemo(demoJob);
-    createdJob.interviews = demoJob.interviews;
-    createdJob.offer = demoJob.offer;
-    createdJob.aiSummary = demoJob.aiSummary;
-    await Promise.all(demoJob.interviews.map((interview) => saveRemoteInterviewFromDemo(createdJob, interview)));
-    if (demoJob.offer) await saveRemoteOfferFromDemo(createdJob);
-    return createdJob;
-  }));
-
-  localStorage.setItem(key, "1");
-  jobs.splice(0, jobs.length, ...seededJobs);
-  state.activeJobId = seededJobs[0]?.id || "";
-  state.offerSelection = jobs.filter((job) => job.status === "已拿Offer" && job.offer).map((job) => job.id);
-  return true;
+  if (cleanupKey) localStorage.setItem(cleanupKey, "1");
+  const oldSeedKey = legacySeedStorageKey();
+  if (oldSeedKey) localStorage.removeItem(oldSeedKey);
+  return jobRows.filter((row) => !isLegacyPreviewJob(row));
 }
 
 async function loadRemoteWorkspace() {
@@ -1009,7 +1021,7 @@ async function loadRemoteWorkspace() {
   const payload = await fetchWithTimeout("/api/jobs", {
     headers: { Authorization: `Bearer ${state.auth.session.access_token}` }
   }, 20000).then((response) => readJsonResponse(response, "读取岗位失败。"));
-  const jobRows = payload.jobs || [];
+  const jobRows = await removeLegacyPreviewJobs(payload.jobs || []);
   const interviewRows = payload.interviews || [];
   const questionRows = payload.questions || [];
   const offerRows = payload.offers || [];
@@ -1052,13 +1064,9 @@ async function loadRemoteWorkspace() {
     state.offerSelection = previousOfferSelection.filter((id) => availableOfferIds.has(id));
     if (!state.offerSelection.length) state.offerSelection = [...availableOfferIds];
   } else {
-    const seeded = await seedDemoWorkspaceIfNeeded();
-    const key = seedStorageKey();
-    if (!seeded && key && localStorage.getItem(key) === "1") {
-      jobs.splice(0, jobs.length);
-      state.activeJobId = "";
-      state.offerSelection = [];
-    }
+    jobs.splice(0, jobs.length);
+    state.activeJobId = "";
+    state.offerSelection = [];
   }
   saveWorkspaceCache();
 }
@@ -2851,7 +2859,7 @@ function renderDeleteJobModal() {
       <span class="material-symbols-outlined" aria-hidden="true">warning</span>
       <div>
         <h3>确认删除这个岗位？</h3>
-        <p>删除后，${escapeHtml(job.company)} · ${escapeHtml(job.title)} 的岗位信息、面试记录和 Offer 数据都会从当前 demo 数据中移除。</p>
+        <p>删除后，${escapeHtml(job.company)} · ${escapeHtml(job.title)} 的岗位信息、面试记录和 Offer 数据都会永久移除。</p>
       </div>
     </section>
   `;
@@ -3733,10 +3741,6 @@ async function deletePendingJob() {
   const index = jobs.findIndex((item) => item.id === jobId);
   try {
     await deleteRemoteJobFromDemo(jobId);
-    if (isRemoteReady() && !isUuid(jobId)) {
-      const key = seedStorageKey();
-      if (key) localStorage.setItem(key, "1");
-    }
   } catch (error) {
     state.modalError = error instanceof Error ? error.message : "删除同步失败。";
     render();
@@ -3751,6 +3755,7 @@ async function deletePendingJob() {
   state.modalError = "";
   state.activeInterviewId = null;
   document.body.classList.remove("modal-open");
+  saveWorkspaceCache();
   showToast("岗位已删除");
   state.screen = "jobs";
   render({ scrollTop: state.scrollPositions.jobs || 0 });
@@ -4439,7 +4444,8 @@ function render(options = {}) {
     window.requestAnimationFrame(() => {
       const board = document.querySelector(".funnel-board");
       const list = document.querySelector(".funnel-list");
-      const target = board || list;
+      const dashboardFunnel = document.querySelector(".mini-funnel");
+      const target = board || list || dashboardFunnel;
       if (target) {
         target.scrollLeft = Math.max(0, options.funnelScroll.left || 0);
         target.scrollTop = Math.max(0, options.funnelScroll.top || 0);
@@ -4477,6 +4483,17 @@ function clearDragTargets() {
   document.querySelectorAll(".is-dragging").forEach((target) => target.classList.remove("is-dragging"));
 }
 
+function funnelScrollSnapshot() {
+  const scrollContainer = document.querySelector(".funnel-board")
+    || document.querySelector(".funnel-list")
+    || document.querySelector(".mini-funnel");
+  return {
+    left: scrollContainer?.scrollLeft || 0,
+    top: scrollContainer?.scrollTop || 0,
+    windowTop: window.scrollY || document.documentElement.scrollTop || 0
+  };
+}
+
 function moveJobToStatus(jobId, status) {
   const job = jobs.find((item) => item.id === jobId);
   if (!job || !statuses.includes(status)) return false;
@@ -4487,6 +4504,167 @@ function moveJobToStatus(jobId, status) {
   syncJobData(job);
   return true;
 }
+
+function commitJobDrop(jobId, status, funnelScroll = funnelScrollSnapshot()) {
+  const job = jobs.find((item) => item.id === jobId);
+  const saveKey = `job-status-${jobId}`;
+  clearDragTargets();
+  state.lastDragAt = Date.now();
+
+  if (!job || !statuses.includes(status)) return;
+  if (pendingOperations.has(saveKey)) {
+    showToast("投递状态正在保存，请稍候");
+    return;
+  }
+
+  const previousStatus = job.status;
+  const previousOfferSelection = [...state.offerSelection];
+  if (!moveJobToStatus(jobId, status)) return;
+
+  render({ funnelScroll });
+  void withLoadingToast(saveKey, "正在保存投递状态...", async () => {
+    try {
+      await patchRemoteJobFromDemo(job, { status: job.status });
+      showToast(`已移动到${statusMeta[status]?.title || status}`);
+    } catch (error) {
+      job.status = previousStatus;
+      state.offerSelection = previousOfferSelection;
+      syncJobData(job);
+      showToast(error instanceof Error ? error.message : "投递状态保存失败");
+      render({ funnelScroll });
+    }
+  });
+}
+
+function setTouchDropTarget(clientX, clientY) {
+  if (!touchDrag?.active) return;
+  const target = document.elementFromPoint(clientX, clientY)?.closest("[data-funnel-drop-status]");
+  document.querySelectorAll(".drag-over").forEach((item) => {
+    if (item !== target) item.classList.remove("drag-over");
+  });
+  target?.classList.add("drag-over");
+  touchDrag.dropTarget = target || null;
+}
+
+function updateTouchDragGhost(clientX, clientY) {
+  if (!touchDrag?.active) return;
+  touchDrag.clientX = clientX;
+  touchDrag.clientY = clientY;
+  touchDrag.ghost.style.transform = `translate3d(${clientX + 14}px, ${clientY + 14}px, 0)`;
+  setTouchDropTarget(clientX, clientY);
+}
+
+function touchAutoScrollFrame() {
+  if (!touchDrag?.active) return;
+  const { clientX, clientY, scrollContainer } = touchDrag;
+
+  if (scrollContainer) {
+    const rect = scrollContainer.getBoundingClientRect();
+    const edge = Math.min(76, rect.width * 0.24);
+    let horizontalSpeed = 0;
+    if (clientX < rect.left + edge) {
+      horizontalSpeed = -Math.ceil(18 * (1 - Math.max(0, clientX - rect.left) / edge));
+    } else if (clientX > rect.right - edge) {
+      horizontalSpeed = Math.ceil(18 * (1 - Math.max(0, rect.right - clientX) / edge));
+    }
+    if (horizontalSpeed) scrollContainer.scrollLeft += horizontalSpeed;
+  }
+
+  const verticalEdge = Math.min(96, window.innerHeight * 0.18);
+  let verticalSpeed = 0;
+  if (clientY < verticalEdge) {
+    verticalSpeed = -Math.ceil(15 * (1 - Math.max(0, clientY) / verticalEdge));
+  } else if (clientY > window.innerHeight - verticalEdge) {
+    verticalSpeed = Math.ceil(15 * (1 - Math.max(0, window.innerHeight - clientY) / verticalEdge));
+  }
+  if (verticalSpeed) window.scrollBy(0, verticalSpeed);
+
+  setTouchDropTarget(clientX, clientY);
+  touchDrag.raf = window.requestAnimationFrame(touchAutoScrollFrame);
+}
+
+function activateTouchDrag() {
+  if (!touchDrag || touchDrag.active) return;
+  touchDrag.active = true;
+  touchDrag.card.classList.add("is-dragging");
+  touchDrag.ghost = touchDrag.card.cloneNode(true);
+  touchDrag.ghost.classList.add("mobile-drag-ghost");
+  touchDrag.ghost.removeAttribute("data-action");
+  touchDrag.ghost.removeAttribute("draggable");
+  document.body.appendChild(touchDrag.ghost);
+  document.body.classList.add("mobile-drag-active");
+  updateTouchDragGhost(touchDrag.clientX, touchDrag.clientY);
+  navigator.vibrate?.(24);
+  touchDrag.raf = window.requestAnimationFrame(touchAutoScrollFrame);
+}
+
+function finishTouchDrag({ commit = false } = {}) {
+  if (!touchDrag) return;
+  window.clearTimeout(touchDrag.timer);
+  if (touchDrag.raf) window.cancelAnimationFrame(touchDrag.raf);
+  const wasActive = touchDrag.active;
+  const jobId = touchDrag.jobId;
+  const status = touchDrag.dropTarget?.dataset.funnelDropStatus;
+  const scroll = funnelScrollSnapshot();
+  touchDrag.ghost?.remove();
+  touchDrag.card?.classList.remove("is-dragging");
+  document.body.classList.remove("mobile-drag-active");
+  clearDragTargets();
+  touchDrag = null;
+
+  if (wasActive) {
+    state.lastDragAt = Date.now();
+    if (commit && status) commitJobDrop(jobId, status, scroll);
+  }
+}
+
+document.addEventListener("touchstart", (event) => {
+  if (event.touches.length !== 1 || touchDrag) return;
+  const card = event.target.closest("[data-drag-job-id]");
+  if (!card || !card.closest(".mini-funnel, .funnel-board, .funnel-list")) return;
+  const touch = event.touches[0];
+  const scrollContainer = card.closest(".mini-funnel, .funnel-board, .funnel-list");
+  touchDrag = {
+    card,
+    jobId: card.dataset.dragJobId,
+    active: false,
+    clientX: touch.clientX,
+    clientY: touch.clientY,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    scrollContainer,
+    dropTarget: null,
+    ghost: null,
+    raf: 0,
+    timer: window.setTimeout(activateTouchDrag, 380)
+  };
+}, { passive: true });
+
+document.addEventListener("touchmove", (event) => {
+  if (!touchDrag || event.touches.length !== 1) return;
+  const touch = event.touches[0];
+  if (!touchDrag.active) {
+    const distance = Math.hypot(touch.clientX - touchDrag.startX, touch.clientY - touchDrag.startY);
+    if (distance > 12) finishTouchDrag();
+    return;
+  }
+  event.preventDefault();
+  updateTouchDragGhost(touch.clientX, touch.clientY);
+}, { passive: false });
+
+document.addEventListener("touchend", (event) => {
+  if (!touchDrag) return;
+  if (touchDrag.active) event.preventDefault();
+  finishTouchDrag({ commit: true });
+}, { passive: false });
+
+document.addEventListener("touchcancel", () => finishTouchDrag(), { passive: true });
+
+document.addEventListener("contextmenu", (event) => {
+  if (event.target.closest("[data-drag-job-id]") && window.matchMedia("(pointer: coarse)").matches) {
+    event.preventDefault();
+  }
+});
 
 document.addEventListener("pointerdown", (event) => {
   const backdrop = event.target.closest("[data-modal-backdrop]");
@@ -4984,41 +5162,9 @@ document.addEventListener("drop", (event) => {
   if (!dropTarget) return;
 
   event.preventDefault();
-  const scrollContainer = document.querySelector(".funnel-board") || document.querySelector(".funnel-list");
-  const funnelScroll = {
-    left: scrollContainer?.scrollLeft || 0,
-    top: scrollContainer?.scrollTop || 0,
-    windowTop: window.scrollY || document.documentElement.scrollTop || 0
-  };
   const jobId = event.dataTransfer.getData("text/plain");
   const status = dropTarget.dataset.funnelDropStatus;
-  const job = jobs.find((item) => item.id === jobId);
-  const saveKey = `job-status-${jobId}`;
-  clearDragTargets();
-  state.lastDragAt = Date.now();
-
-  if (pendingOperations.has(saveKey)) {
-    showToast("投递状态正在保存，请稍候");
-    return;
-  }
-
-  const previousStatus = job?.status;
-  const previousOfferSelection = [...state.offerSelection];
-  if (moveJobToStatus(jobId, status)) {
-    render({ funnelScroll });
-    void withLoadingToast(saveKey, "正在保存投递状态...", async () => {
-      try {
-        await patchRemoteJobFromDemo(job, { status: job.status });
-        showToast(`已移动到${statusMeta[status]?.title || status}`);
-      } catch (error) {
-        job.status = previousStatus;
-        state.offerSelection = previousOfferSelection;
-        syncJobData(job);
-        showToast(error instanceof Error ? error.message : "投递状态保存失败");
-        render({ funnelScroll });
-      }
-    });
-  }
+  commitJobDrop(jobId, status);
 });
 
 document.addEventListener("dragend", () => {
@@ -5084,10 +5230,10 @@ async function initApp() {
       }
     }
   } catch (error) {
-    showToast(error instanceof Error ? error.message : "初始化失败，已进入 demo 模式");
+    showToast(error instanceof Error ? error.message : "初始化失败，已切换到本地预览");
   } finally {
     if (!state.auth.configured && !state.sharedJob && !state.shareInvalid) {
-      showToast("Supabase 未配置，当前为本地 demo 模式");
+      showToast("云端服务未配置，当前仅显示本地预览数据");
     }
     render();
   }

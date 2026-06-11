@@ -51,6 +51,13 @@
 html {
   min-width: 320px;
   background: var(--background);
+  overflow-y: overlay;
+  scrollbar-gutter: auto;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(83, 76, 58, 0.42) transparent;
 }
 
 body {
@@ -65,6 +72,27 @@ body {
 
 body.modal-open {
   overflow: hidden;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(83, 76, 58, 0.38);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(83, 76, 58, 0.58);
+  background-clip: padding-box;
 }
 
 .auth-gate {
@@ -5494,4 +5522,121 @@ body.is-scrolled .topbar-subtitle {
     width: 108px;
     height: 86px;
   }
+
+  .mini-funnel {
+    grid-auto-columns: minmax(124px, 36vw);
+    gap: 6px;
+    margin-inline: -4px;
+    padding: 0 4px 8px;
+  }
+
+  .mini-funnel-step {
+    min-height: 322px;
+    gap: 7px;
+    padding: 10px;
+    border-radius: 22px;
+  }
+
+  .mini-funnel-head {
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    gap: 3px;
+  }
+
+  .mini-funnel-head .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  .mini-funnel-head small {
+    min-width: 20px;
+    min-height: 20px;
+    font-size: 11px;
+  }
+
+  .mini-funnel-jobs {
+    max-height: 258px;
+    gap: 5px;
+    padding-right: 0;
+  }
+
+  .mini-funnel-jobs button {
+    min-height: 58px;
+    padding: 7px 24px 7px 8px;
+    border-radius: 13px;
+    -webkit-touch-callout: none;
+  }
+
+  .mini-funnel-jobs strong {
+    font-size: 12px;
+  }
+
+  .mini-funnel-jobs small,
+  .mini-funnel-jobs em {
+    font-size: 10px;
+  }
+
+  .funnel-board {
+    grid-auto-columns: minmax(224px, 72vw);
+    gap: 8px;
+    margin-inline: -8px;
+    padding-inline: 8px;
+    scroll-padding-inline: 8px;
+  }
+
+  .funnel-column {
+    min-height: 380px;
+    padding: 10px;
+  }
+
+  .funnel-column-body {
+    max-height: 304px;
+    gap: 7px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .funnel-job-card {
+    min-height: 66px;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 8px;
+    padding: 9px 28px 9px 9px;
+    border-radius: 16px;
+    -webkit-touch-callout: none;
+  }
+
+  .funnel-job-card .logo-tile.compact {
+    width: 32px;
+    height: 32px;
+    border-radius: 12px;
+    font-size: 10px;
+  }
+
+  .funnel-job-card .tag-row {
+    display: none;
+  }
+}
+
+.mobile-drag-active {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
+.mobile-drag-active [data-drag-job-id] {
+  touch-action: none;
+}
+
+.mobile-drag-ghost {
+  position: fixed !important;
+  inset: 0 auto auto 0 !important;
+  z-index: 1000 !important;
+  width: min(220px, 58vw) !important;
+  min-height: 0 !important;
+  max-height: 150px;
+  margin: 0 !important;
+  overflow: hidden;
+  pointer-events: none !important;
+  opacity: 0.92 !important;
+  transform-origin: top left;
+  box-shadow: 0 22px 48px rgba(42, 36, 20, 0.24) !important;
+  animation: none !important;
 }
