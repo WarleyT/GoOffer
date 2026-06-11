@@ -4389,6 +4389,7 @@ function syncTopbarState() {
 }
 
 function render(options = {}) {
+  ensurePageScrollbar();
   if (state.booting) {
     app.innerHTML = `
       <main class="auth-gate">
@@ -4403,6 +4404,7 @@ function render(options = {}) {
     `;
     modalRoot.innerHTML = "";
     renderToast();
+    window.requestAnimationFrame(updatePageScrollbar);
     return;
   }
 
@@ -4412,6 +4414,7 @@ function render(options = {}) {
     renderToast();
     document.body.classList.remove("modal-open");
     document.body.classList.add("shared-mode");
+    window.requestAnimationFrame(updatePageScrollbar);
     return;
   }
   document.body.classList.remove("shared-mode");
@@ -4465,6 +4468,7 @@ function render(options = {}) {
       }
     }
   }
+  window.requestAnimationFrame(updatePageScrollbar);
 }
 
 function syncDescriptionClampState() {
@@ -4550,7 +4554,8 @@ function updateTouchDragGhost(clientX, clientY) {
   if (!touchDrag?.active) return;
   touchDrag.clientX = clientX;
   touchDrag.clientY = clientY;
-  touchDrag.ghost.style.transform = `translate3d(${clientX + 14}px, ${clientY + 14}px, 0)`;
+  const ghostRect = touchDrag.ghost.getBoundingClientRect();
+  touchDrag.ghost.style.transform = `translate3d(${clientX - ghostRect.width / 2}px, ${clientY - ghostRect.height / 2}px, 0)`;
   setTouchDropTarget(clientX, clientY);
 }
 
@@ -4585,9 +4590,16 @@ function touchAutoScrollFrame() {
 
 function activateTouchDrag() {
   if (!touchDrag || touchDrag.active) return;
+  const job = jobs.find((item) => item.id === touchDrag.jobId);
+  if (!job) {
+    finishTouchDrag();
+    return;
+  }
   touchDrag.active = true;
   touchDrag.card.classList.add("is-dragging");
-  touchDrag.ghost = touchDrag.card.cloneNode(true);
+  const ghostTemplate = document.createElement("template");
+  ghostTemplate.innerHTML = renderFunnelJobCard(job).trim();
+  touchDrag.ghost = ghostTemplate.content.firstElementChild;
   touchDrag.ghost.classList.add("mobile-drag-ghost");
   touchDrag.ghost.removeAttribute("data-action");
   touchDrag.ghost.removeAttribute("draggable");
@@ -4596,6 +4608,31 @@ function activateTouchDrag() {
   updateTouchDragGhost(touchDrag.clientX, touchDrag.clientY);
   navigator.vibrate?.(24);
   touchDrag.raf = window.requestAnimationFrame(touchAutoScrollFrame);
+}
+
+function ensurePageScrollbar() {
+  if (document.querySelector(".page-scrollbar")) return;
+  const scrollbar = document.createElement("div");
+  scrollbar.className = "page-scrollbar";
+  scrollbar.setAttribute("aria-hidden", "true");
+  scrollbar.innerHTML = '<span class="page-scrollbar-thumb"></span>';
+  document.body.appendChild(scrollbar);
+}
+
+function updatePageScrollbar() {
+  ensurePageScrollbar();
+  const root = document.documentElement;
+  const scrollHeight = Math.max(root.scrollHeight, document.body.scrollHeight);
+  const viewportHeight = window.innerHeight;
+  const maxScroll = Math.max(0, scrollHeight - viewportHeight);
+  const thumbHeight = maxScroll
+    ? Math.max(40, Math.round(viewportHeight * viewportHeight / scrollHeight))
+    : 0;
+  const thumbTravel = Math.max(0, viewportHeight - thumbHeight - 12);
+  const thumbTop = maxScroll ? 6 + Math.round((window.scrollY / maxScroll) * thumbTravel) : 6;
+  root.style.setProperty("--page-scrollbar-height", `${thumbHeight}px`);
+  root.style.setProperty("--page-scrollbar-top", `${thumbTop}px`);
+  root.classList.toggle("has-page-scroll", maxScroll > 0);
 }
 
 function finishTouchDrag({ commit = false } = {}) {
@@ -5210,8 +5247,14 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("scroll", syncTopbarState, { passive: true });
-window.addEventListener("resize", syncDescriptionClampState, { passive: true });
+window.addEventListener("scroll", () => {
+  syncTopbarState();
+  updatePageScrollbar();
+}, { passive: true });
+window.addEventListener("resize", () => {
+  syncDescriptionClampState();
+  updatePageScrollbar();
+}, { passive: true });
 
 async function initApp() {
   applyUrlState();

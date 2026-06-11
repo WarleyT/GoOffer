@@ -51,13 +51,11 @@
 html {
   min-width: 320px;
   background: var(--background);
-  overflow-y: overlay;
   scrollbar-gutter: auto;
 }
 
 * {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(83, 76, 58, 0.42) transparent;
+  scrollbar-width: none;
 }
 
 body {
@@ -75,24 +73,34 @@ body.modal-open {
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 0;
+  height: 0;
 }
 
-*::-webkit-scrollbar-track {
-  background: transparent;
+.page-scrollbar {
+  position: fixed;
+  inset: 0 3px 0 auto;
+  z-index: 1200;
+  width: 6px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms var(--motion-soft);
 }
 
-*::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
+.has-page-scroll .page-scrollbar {
+  opacity: 1;
+}
+
+.page-scrollbar-thumb {
+  position: absolute;
+  top: var(--page-scrollbar-top, 6px);
+  right: 0;
+  width: 6px;
+  height: var(--page-scrollbar-height, 0);
   border-radius: 999px;
   background: rgba(83, 76, 58, 0.38);
-  background-clip: padding-box;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(83, 76, 58, 0.58);
-  background-clip: padding-box;
+  box-shadow: 0 1px 5px rgba(42, 36, 20, 0.12);
+  transition: background-color 160ms var(--motion-soft);
 }
 
 .auth-gate {
@@ -1401,19 +1409,7 @@ body.is-scrolled .topbar-subtitle {
   max-height: clamp(188px, 21vh, 288px);
   overflow-y: auto;
   padding-right: 2px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--outline-variant) transparent;
-}
-
-.dashboard-interview-list::-webkit-scrollbar,
-.mini-funnel-jobs::-webkit-scrollbar {
-  width: 8px;
-}
-
-.dashboard-interview-list::-webkit-scrollbar-thumb,
-.mini-funnel-jobs::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: var(--outline-variant);
+  scrollbar-width: none;
 }
 
 .mini-funnel-jobs button {
@@ -5629,14 +5625,23 @@ body.is-scrolled .topbar-subtitle {
   position: fixed !important;
   inset: 0 auto auto 0 !important;
   z-index: 1000 !important;
-  width: min(220px, 58vw) !important;
+  width: min(224px, 72vw) !important;
   min-height: 0 !important;
-  max-height: 150px;
   margin: 0 !important;
   overflow: hidden;
   pointer-events: none !important;
-  opacity: 0.92 !important;
-  transform-origin: top left;
+  opacity: 0.96 !important;
+  transform-origin: center;
   box-shadow: 0 22px 48px rgba(42, 36, 20, 0.24) !important;
   animation: none !important;
+  transition: none !important;
+}
+
+* {
+  scrollbar-width: none !important;
+}
+
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
 }
