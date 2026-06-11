@@ -370,6 +370,74 @@ let workspaceLoadPromise = null;
 let touchDrag = null;
 const authStorageKey = "gooffer.supabase.session";
 const runtimeConfigStorageKey = "gooffer.runtime.config";
+const analyticsVisitorKey = "gooffer.analytics.visitor";
+const analyticsSessionKey = "gooffer.analytics.session";
+
+function analyticsId(storage, key) {
+  let value = storage.getItem(key);
+  if (!value) {
+    value = crypto.randomUUID();
+    storage.setItem(key, value);
+  }
+  return value;
+}
+
+function analyticsEntityId(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ""))
+    ? value
+    : null;
+}
+
+function trackEvent(eventName, options = {}) {
+  const params = new URLSearchParams(window.location.search);
+  const headers = { "content-type": "application/json" };
+  if (state.auth.session?.access_token) {
+    headers.Authorization = `Bearer ${state.auth.session.access_token}`;
+  }
+
+  void fetch("/api/analytics/events", {
+    method: "POST",
+    keepalive: true,
+    headers,
+    body: JSON.stringify({
+      client_event_id: crypto.randomUUID(),
+      event_name: eventName,
+      visitor_id: analyticsId(localStorage, analyticsVisitorKey),
+      session_id: analyticsId(sessionStorage, analyticsSessionKey),
+      page_path: `${window.location.pathname}${window.location.search}`,
+      referrer: document.referrer || null,
+      utm_source: params.get("utm_source"),
+      utm_medium: params.get("utm_medium"),
+      utm_campaign: params.get("utm_campaign"),
+      entity_type: options.entityType || null,
+      entity_id: analyticsEntityId(options.entityId),
+      properties: options.properties || {},
+      event_version: 1
+    })
+  }).catch(() => null);
+}
+
+function trackScreenView(screen = state.screen) {
+  trackEvent("page_viewed", { properties: { screen } });
+  if (screen === "dashboard" || screen === "jobs") {
+    trackEvent("add_job_cta_viewed", { properties: { screen } });
+  }
+  if (screen === "offers") {
+    trackEvent("offer_compare_entry_viewed", {
+      properties: { offer_count: jobOffers().length }
+    });
+  }
+  if (screen === "detail") {
+    const job = activeJob();
+    if (job?.interviews?.length) {
+      trackEvent("ai_summary_entry_viewed", {
+        entityType: "job",
+        entityId: job.id,
+        properties: { interview_count: job.interviews.length }
+      });
+    }
+  }
+}
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
   const controller = new AbortController();
@@ -3523,11 +3591,14 @@ async function handleLoginSubmit(signup = false) {
     return;
   }
 
+  trackEvent(signup ? "signup_started" : "login_started");
   try {
     if (signup) {
       await signUp(email, password);
+      trackEvent("signup_succeeded");
     } else {
       await signIn(email, password);
+      trackEvent("login_succeeded");
     }
     state.modal = null;
     state.modalError = "";
@@ -3538,6 +3609,7 @@ async function handleLoginSubmit(signup = false) {
     if (signup) {
       try {
         await signIn(email, password);
+        trackEvent("signup_succeeded");
         state.modal = null;
         state.modalError = "";
         document.body.classList.remove("modal-open");
@@ -3548,6 +3620,9 @@ async function handleLoginSubmit(signup = false) {
         // Keep the original signup error below so users see the real registration problem.
       }
     }
+    trackEvent(signup ? "signup_failed" : "login_failed", {
+      properties: { error_type: error instanceof Error ? error.name : "unknown" }
+    });
     state.modalError = error instanceof Error ? error.message : "账号操作失败。";
     render();
   }
@@ -3572,6 +3647,7 @@ async function saveAiProvider() {
     render();
     return;
   }
+  trackEvent("ai_provider_save_clicked");
   try {
     if (!(await refreshSessionIfNeeded())) {
       throw new Error("登录状态已失效，已自动退出。");
@@ -3594,12 +3670,16 @@ async function saveAiProvider() {
     closeModal();
     showToast("AI API 设置已保存");
   } catch (error) {
+    trackEvent("ai_provider_save_failed", {
+      properties: { error_type: error instanceof Error ? error.name : "unknown" }
+    });
     state.modalError = error instanceof Error ? error.message : "保存 AI 设置失败。";
     render();
   }
 }
 
 async function testAiProvider() {
+  trackEvent("ai_provider_test_clicked");
   try {
     if (!(await refreshSessionIfNeeded())) {
       throw new Error("登录状态已失效，已自动退出。");
@@ -3689,6 +3769,17 @@ async function saveJob(editing = false) {
     state.screen = "detail";
   }
 
+  if (!editing) {
+    const createdJob = activeJob();
+    trackEvent("job_created", {
+      entityType: "job",
+      entityId: createdJob?.id,
+      properties: {
+        source: createdJob?.source || "手动录入",
+        priority: createdJob?.priority || "中"
+      }
+    });
+  }
   closeModal();
   showToast(editing ? "岗位信息已更新" : "岗位已添加，并进入详情页");
 }
@@ -3826,6 +3917,16 @@ async function saveInterview() {
     render();
     return;
   }
+  if (existingIndex < 0) {
+    trackEvent("interview_created", {
+      entityType: "interview",
+      entityId: nextInterview.id,
+      properties: {
+        job_id: job.id,
+        question_count: nextInterview.questions.length
+      }
+    });
+  }
   closeModal();
   showToast(existingIndex >= 0 ? "面试记录已更新" : "面试记录已保存");
 }
@@ -3882,7 +3983,12 @@ async function saveOffer() {
     render();
     return;
   }
+  trackEvent("offer_created", {
+    entityType: "job",
+    entityId: job.id
+  });
   state.screen = "offers";
+  trackScreenView("offers");
   closeModal();
   showToast("Offer 已加入对比");
 }
@@ -4009,6 +4115,11 @@ function triggerOfferCelebration(company) {
 
 async function generateAiSummary() {
   const job = activeJob();
+  trackEvent("ai_summary_requested", {
+    entityType: "interview",
+    entityId: job.interviews[0]?.id,
+    properties: { job_id: job.id }
+  });
   state.aiLoading = true;
   render();
 
@@ -4275,6 +4386,11 @@ function rememberScroll(screen = state.screen) {
 function navigateTo(screen, { restore = false } = {}) {
   if (!screen || !screenMapHas(screen)) return;
 
+  if (screen === "offers") {
+    trackEvent("offer_compare_entry_clicked", {
+      properties: { from_screen: state.screen }
+    });
+  }
   rememberScroll();
   if (screen === "detail" && state.screen !== "detail") {
     state.detailReturnScreen = ["dashboard", "jobs", "offers"].includes(state.screen)
@@ -4284,6 +4400,7 @@ function navigateTo(screen, { restore = false } = {}) {
   state.screen = screen;
   state.jobSwitchDirection = "";
   render({ scrollTop: restore ? state.scrollPositions[screen] || 0 : 0 });
+  trackScreenView(screen);
 }
 
 function screenMapHas(screen) {
@@ -4888,6 +5005,7 @@ document.addEventListener("click", (event) => {
     state.modal = "login";
     state.modalError = "";
     state.accountOpen = false;
+    trackEvent(state.auth.mode === "signup" ? "signup_page_viewed" : "login_page_viewed");
     render();
     return;
   }
@@ -4895,6 +5013,7 @@ document.addEventListener("click", (event) => {
   if (action === "toggle-auth-mode") {
     state.auth.mode = state.auth.mode === "signup" ? "signin" : "signup";
     state.modalError = "";
+    trackEvent(state.auth.mode === "signup" ? "signup_page_viewed" : "login_page_viewed");
     render();
     return;
   }
@@ -4918,6 +5037,7 @@ document.addEventListener("click", (event) => {
     state.modal = "aiSettings";
     state.modalError = "";
     state.accountOpen = false;
+    trackEvent("ai_provider_page_viewed");
     void loadAiProvider().then(() => render()).catch((error) => {
       state.modalError = error instanceof Error ? error.message : "读取 AI 设置失败。";
       render();
@@ -5006,6 +5126,7 @@ document.addEventListener("click", (event) => {
   if (action === "open-job-modal") {
     state.modal = "job";
     state.modalError = "";
+    trackEvent("job_create_clicked", { properties: { screen: state.screen } });
     render();
     return;
   }
@@ -5260,6 +5381,8 @@ async function initApp() {
   applyUrlState();
   restoreRuntimeConfig();
   restoreSession();
+  trackEvent("landing_viewed", { properties: { initial_screen: state.screen } });
+  trackScreenView(state.screen);
   if (state.auth.session) restoreWorkspaceCache();
   state.booting = false;
   render();
