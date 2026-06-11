@@ -4,11 +4,12 @@ import {
   errorJson,
   json,
   loadProvider,
+  recordEvent,
   requireUser,
   type Env
 } from "../../_shared";
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const user = await requireUser(request, env);
   if (user instanceof Response) return user;
 
@@ -36,8 +37,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       temperature: 0
     });
 
+    waitUntil(recordEvent(env, {
+      userId: user.id,
+      name: "ai_provider_test_succeeded",
+      entityType: "ai_provider",
+      properties: {
+        provider: provider.provider,
+        model: provider.model
+      }
+    }));
+
     return json({ ok: true });
   } catch (error) {
+    waitUntil(recordEvent(env, {
+      userId: user.id,
+      name: "ai_provider_test_failed",
+      entityType: "ai_provider",
+      properties: {
+        provider: provider.provider,
+        model: provider.model,
+        error_code: "AI_PROVIDER_TEST_FAILED"
+      }
+    }));
+
     return errorJson(502, "AI_PROVIDER_TEST_FAILED", error instanceof Error ? error.message : "AI 连接测试失败。");
   }
 };

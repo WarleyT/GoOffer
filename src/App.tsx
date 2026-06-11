@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Bot,
@@ -18,6 +18,7 @@ import {
   Trophy
 } from "lucide-react";
 import type { AIProvider, AISummary, Interview, Job, JobDraft, JobStatus, OfferDraft, RecognizedJob } from "./types";
+import { trackDetached } from "./lib/analytics";
 import { useAuth } from "./lib/auth";
 import { demoStore } from "./lib/demoStore";
 import { displayTags, interviewResults, normalizeSalary, offerScore, parseTags, priorities, statuses, todayLabel } from "./lib/format";
@@ -92,18 +93,39 @@ function AuthPage() {
   const [password, setPassword] = useState("gooffer-demo");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const landingTracked = useRef(false);
+  const authModeTracked = useRef("");
+
+  useEffect(() => {
+    if (!landingTracked.current) {
+      landingTracked.current = true;
+      trackDetached("landing_viewed");
+    }
+
+    const eventName = isSignUp ? "signup_page_viewed" : "login_page_viewed";
+    if (authModeTracked.current !== eventName) {
+      authModeTracked.current = eventName;
+      trackDetached(eventName);
+    }
+  }, [isSignUp]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     setBusy(true);
+    trackDetached(isSignUp ? "signup_started" : "login_started");
     try {
       if (isSignUp) {
         await auth.signUp(email, password, username);
+        trackDetached("signup_succeeded");
       } else {
         await auth.signIn(email, password);
+        trackDetached("login_succeeded");
       }
     } catch (err) {
+      trackDetached(isSignUp ? "signup_failed" : "login_failed", {
+        properties: { error_type: err instanceof Error ? err.name : "unknown" }
+      });
       setError(err instanceof Error ? err.message : "账号操作失败。");
     } finally {
       setBusy(false);
@@ -193,7 +215,14 @@ function Workspace() {
       async createJob(draft: JobDraft) {
         if (!auth.user) return;
         if (auth.user.isDemo) demoStore.createJob(draft);
-        else await createRemoteJob(auth.user.id, draft);
+        else {
+          const job = await createRemoteJob(auth.user.id, draft);
+          trackDetached("job_created", {
+            entityType: "job",
+            entityId: job.id,
+            properties: { source: draft.source || "manual", priority: draft.priority }
+          });
+        }
         await refresh();
       },
       async updateJob(jobId: string, patch: Partial<JobDraft & { status: JobStatus }>) {
@@ -210,13 +239,26 @@ function Workspace() {
         const questions = interview.questions.map((item) => ({ question: item.question, answer: item.answer }));
         if (!auth.user) return;
         if (auth.user.isDemo) demoStore.addInterview(jobId, interview);
-        else await addRemoteInterview(auth.user.id, jobId, interview, questions);
+        else {
+          const interviewId = await addRemoteInterview(auth.user.id, jobId, interview, questions);
+          trackDetached("interview_created", {
+            entityType: "interview",
+            entityId: interviewId,
+            properties: { job_id: jobId, question_count: questions.length }
+          });
+        }
         await refresh();
       },
       async saveOffer(jobId: string, draft: OfferDraft) {
         if (!auth.user) return;
         if (auth.user.isDemo) demoStore.saveOffer(jobId, draft);
-        else await saveRemoteOffer(auth.user.id, jobId, draft);
+        else {
+          await saveRemoteOffer(auth.user.id, jobId, draft);
+          trackDetached("offer_created", {
+            entityType: "job",
+            entityId: jobId
+          });
+        }
         await refresh();
       },
       async saveSummary(jobId: string, interviewId: string | null, summary: Omit<AISummary, "id" | "job_id" | "created_at">) {
@@ -231,13 +273,29 @@ function Workspace() {
       },
       async generateSummary(interviewId: string) {
         if (auth.user?.isDemo) {
-          return {
+          const result = {
             generation_id: "demo-generation",
             prompt_version_id: "demo",
             summary: demoStore.generateSummary()
           };
+          const job = demoStore.listJobs().find((item) => item.interviews.some((interview) => interview.id === interviewId));
+          if (job) {
+            demoStore.saveSummary(job.id, interviewId, {
+              ...result.summary,
+              generation_id: result.generation_id,
+              interview_id: interviewId
+            });
+            await refresh();
+          }
+          return result;
         }
-        return generateRemoteSummary(interviewId);
+        trackDetached("ai_summary_requested", {
+          entityType: "interview",
+          entityId: interviewId
+        });
+        const result = await generateRemoteSummary(interviewId);
+        await refresh();
+        return result;
       }
     }),
     [auth.user]
@@ -245,6 +303,7 @@ function Workspace() {
 
   return (
     <div className="app-shell">
+      <RouteAnalytics />
       <aside className="sidebar">
         <Link className="brand" to="/">
           <strong>
@@ -255,7 +314,7 @@ function Workspace() {
         <nav>
           <NavItem to="/" icon={<LayoutDashboard size={20} />} label="概览" />
           <NavItem to="/jobs" icon={<BriefcaseBusiness size={20} />} label="岗位" />
-          <NavItem to="/offers" icon={<Trophy size={20} />} label="Offer" />
+          <NavItem to="/offers" icon={<Trophy size={20} />} label="Offer" eventName="offer_compare_entry_clicked" />
           <NavItem to="/settings/ai" icon={<Settings size={20} />} label="AI 设置" />
         </nav>
         <div className="sidebar-user">
@@ -290,9 +349,23 @@ function Workspace() {
   );
 }
 
-function NavItem({ to, icon, label }: { to: string; icon: React.ReactNode; label: string }) {
+function RouteAnalytics() {
+  const location = useLocation();
+  const lastPath = useRef("");
+
+  useEffect(() => {
+    const path = `${location.pathname}${location.search}`;
+    if (lastPath.current === path) return;
+    lastPath.current = path;
+    trackDetached("page_viewed", { properties: { path } });
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
+function NavItem({ to, icon, label, eventName }: { to: string; icon: React.ReactNode; label: string; eventName?: string }) {
   return (
-    <Link className="nav-item" to={to}>
+    <Link className="nav-item" to={to} onClick={() => eventName && trackDetached(eventName)}>
       {icon}
       {label}
     </Link>
@@ -397,10 +470,17 @@ type Actions = {
 function JobsPage({ jobs, actions }: { jobs: Job[]; actions: Actions }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("全部");
+  const addJobTracked = useRef(false);
   const visibleJobs = jobs.filter((job) => {
     const text = `${job.company} ${job.title} ${job.city} ${job.tags.join(" ")}`.toLowerCase();
     return text.includes(query.toLowerCase()) && (status === "全部" || job.status === status);
   });
+
+  useEffect(() => {
+    if (addJobTracked.current) return;
+    addJobTracked.current = true;
+    trackDetached("add_job_cta_viewed");
+  }, []);
 
   return (
     <>
@@ -408,7 +488,11 @@ function JobsPage({ jobs, actions }: { jobs: Job[]; actions: Actions }) {
         eyebrow="Jobs"
         title="岗位"
         description="筛选、排序并更新每个岗位的投递状态。"
-        action={<Link className="button primary" to="#job-form"><Plus size={18} />新增岗位</Link>}
+        action={
+          <Link className="button primary" to="#job-form" onClick={() => trackDetached("job_create_clicked")}>
+            <Plus size={18} />新增岗位
+          </Link>
+        }
       />
       <section className="toolbar">
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索公司、岗位、城市或标签" />
@@ -672,16 +756,8 @@ function InterviewForm({ job, actions }: { job: Job; actions: Actions }) {
 }
 
 function InterviewList({ job, actions }: { job: Job; actions: Actions }) {
-  async function generate(jobId: string, interview: Interview) {
-    const result = await actions.generateSummary(interview.id);
-    await actions.saveSummary(jobId, interview.id, {
-      generation_id: result.generation_id,
-      interview_id: interview.id,
-      overview: result.summary.overview,
-      strengths: result.summary.strengths,
-      improvements: result.summary.improvements,
-      next: result.summary.next
-    });
+  async function generate(interview: Interview) {
+    await actions.generateSummary(interview.id);
   }
 
   return (
@@ -701,7 +777,7 @@ function InterviewList({ job, actions }: { job: Job; actions: Actions }) {
               <p>A：{item.answer || "暂未填写回答。"}</p>
             </div>
           ))}
-          <button className="button dark" onClick={() => void generate(job.id, interview)}>
+          <button className="button dark" onClick={() => void generate(interview)}>
             <Bot size={18} />生成并保存 AI 总结
           </button>
         </article>
@@ -713,6 +789,16 @@ function InterviewList({ job, actions }: { job: Job; actions: Actions }) {
 
 function AISummaryCard({ job, actions }: { job: Job; actions: Actions }) {
   const latest = job.summaries[0];
+  const entryTracked = useRef(false);
+
+  useEffect(() => {
+    if (entryTracked.current || !job.interviews.length) return;
+    entryTracked.current = true;
+    trackDetached("ai_summary_entry_viewed", {
+      entityType: "job",
+      entityId: job.id
+    });
+  }, [job.id, job.interviews.length]);
 
   if (!latest) {
     return (
@@ -721,7 +807,7 @@ function AISummaryCard({ job, actions }: { job: Job; actions: Actions }) {
         <h2>面试助手</h2>
         <p>当前岗位还没有总结。记录面试问题和回答后，可以生成结构化复盘。</p>
         {job.interviews[0] && (
-          <button className="button primary" onClick={() => void actions.generateSummary(job.interviews[0].id).then((result) => actions.saveSummary(job.id, job.interviews[0].id, { generation_id: result.generation_id, interview_id: job.interviews[0].id, overview: result.summary.overview, strengths: result.summary.strengths, improvements: result.summary.improvements, next: result.summary.next }))}>
+          <button className="button primary" onClick={() => void actions.generateSummary(job.interviews[0].id)}>
             生成总结
           </button>
         )}
@@ -745,6 +831,15 @@ function AISummaryCard({ job, actions }: { job: Job; actions: Actions }) {
 function OffersPage({ jobs, actions }: { jobs: Job[]; actions: Actions }) {
   const offerJobs = jobs.filter((job) => job.offer);
   const best = offerJobs.reduce<Job | null>((winner, job) => (!winner || offerScore(job.offer) > offerScore(winner.offer) ? job : winner), null);
+  const comparisonTracked = useRef(false);
+
+  useEffect(() => {
+    if (comparisonTracked.current) return;
+    comparisonTracked.current = true;
+    trackDetached("offer_compare_entry_viewed", {
+      properties: { offer_count: offerJobs.length }
+    });
+  }, [offerJobs.length]);
 
   return (
     <>
@@ -825,8 +920,14 @@ function AISettings() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const pageTracked = useRef(false);
 
   useEffect(() => {
+    if (!pageTracked.current) {
+      pageTracked.current = true;
+      trackDetached("ai_provider_page_viewed");
+    }
+
     async function load() {
       try {
         const value = auth.user?.isDemo ? demoStore.getProvider() : await getRemoteProvider();
@@ -848,6 +949,7 @@ function AISettings() {
     setBusy("save");
     setError("");
     setMessage("");
+    trackDetached("ai_provider_save_clicked");
     try {
       const value = auth.user?.isDemo
         ? demoStore.saveProvider({
@@ -862,6 +964,9 @@ function AISettings() {
       setApiKey("");
       setMessage("AI 配置已保存。");
     } catch (err) {
+      trackDetached("ai_provider_save_failed", {
+        properties: { error_type: err instanceof Error ? err.name : "unknown" }
+      });
       setError(err instanceof Error ? err.message : "保存 AI 配置失败。");
     } finally {
       setBusy("");
@@ -872,6 +977,7 @@ function AISettings() {
     setBusy("test");
     setError("");
     setMessage("");
+    trackDetached("ai_provider_test_clicked");
     try {
       if (!auth.user?.isDemo) await testRemoteProvider();
       setMessage("AI 连接测试通过。");

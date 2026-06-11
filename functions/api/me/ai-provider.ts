@@ -3,6 +3,7 @@ import {
   errorJson,
   json,
   keyHint,
+  recordEvent,
   readJson,
   requireUser,
   serviceClient,
@@ -33,7 +34,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return json({ provider: data || null });
 };
 
-export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPut: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const user = await requireUser(request, env);
   if (user instanceof Response) return user;
 
@@ -90,6 +91,18 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env }) => {
     .single();
 
   if (error) return errorJson(500, "PROVIDER_SAVE_FAILED", "保存 AI 配置失败。");
+
+  waitUntil(recordEvent(env, {
+    userId: user.id,
+    name: "ai_provider_saved",
+    entityType: "ai_provider",
+    properties: {
+      provider: data.provider,
+      model: data.model,
+      supports_vision: data.supports_vision
+    }
+  }));
+
   return json({ provider: data });
 };
 

@@ -4,6 +4,7 @@ import {
   errorJson,
   json,
   loadProvider,
+  recordEvent,
   requireUser,
   serviceClient,
   type Env
@@ -131,13 +132,29 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params, 
     });
     if (summaryError) throw new Error(`AI 总结保存失败：${summaryError.message}`);
 
-    waitUntil(Promise.resolve(supabase.from("analytics_events").insert({
-      user_id: user.id,
-      event_name: "ai_summary_generated",
-      entity_type: "interview",
-      entity_id: interview.id,
-      properties: { generation_id: generationId, prompt_version_id: promptVersion?.id || "ai_summary_action_v1" }
-    })));
+    waitUntil(Promise.all([
+      recordEvent(env, {
+        userId: user.id,
+        name: "ai_summary_generated",
+        entityType: "interview",
+        entityId: interview.id,
+        properties: {
+          generation_id: generationId,
+          prompt_version_id: promptVersion?.id || "ai_summary_action_v1"
+        }
+      }),
+      recordEvent(env, {
+        userId: user.id,
+        name: "ai_summary_saved",
+        entityType: "interview",
+        entityId: interview.id,
+        properties: {
+          generation_id: generationId,
+          prompt_version_id: promptVersion?.id || "ai_summary_action_v1",
+          save_mode: "automatic"
+        }
+      })
+    ]).then(() => undefined));
 
     return json({
       generation_id: generationId,
@@ -156,6 +173,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, params, 
       error_code: "AI_SUMMARY_FAILED",
       error_message: error instanceof Error ? error.message : "AI 总结生成失败。"
     });
+
+    waitUntil(recordEvent(env, {
+      userId: user.id,
+      name: "ai_summary_failed",
+      entityType: "interview",
+      entityId: interview.id,
+      properties: {
+        prompt_version_id: promptVersion?.id || "ai_summary_action_v1",
+        error_code: "AI_SUMMARY_FAILED"
+      }
+    }));
 
     return errorJson(502, "AI_SUMMARY_FAILED", error instanceof Error ? error.message : "AI 总结生成失败。");
   }

@@ -76,6 +76,50 @@ export async function requireUser(request: Request, env: Env): Promise<User | Re
   };
 }
 
+export async function userFromRequest(request: Request, env: Env): Promise<User | null> {
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY) return null;
+
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return null;
+
+  const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY, {
+    auth: { persistSession: false }
+  });
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) return null;
+
+  return {
+    id: data.user.id,
+    email: data.user.email || undefined
+  };
+}
+
+export async function recordEvent(
+  env: Env,
+  event: {
+    userId?: string | null;
+    name: string;
+    entityType?: string;
+    entityId?: string;
+    properties?: Record<string, unknown>;
+  }
+) {
+  try {
+    const supabase = serviceClient(env);
+    await supabase.from("analytics_events").insert({
+      user_id: event.userId || null,
+      event_name: event.name,
+      entity_type: event.entityType || null,
+      entity_id: event.entityId || null,
+      properties: event.properties || {},
+      event_source: "server"
+    });
+  } catch {
+    // Analytics failures must not fail the primary API request.
+  }
+}
+
 export function base64FromBytes(bytes: Uint8Array) {
   let binary = "";
   for (let index = 0; index < bytes.length; index += 1) {

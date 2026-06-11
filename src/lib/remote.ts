@@ -224,6 +224,7 @@ export async function addRemoteInterview(
     await client.from("interviews").delete().eq("id", interviewId);
     throw error;
   }
+  return interviewId;
 }
 
 export async function saveRemoteOffer(userId: string, jobId: string, draft: OfferDraft) {
