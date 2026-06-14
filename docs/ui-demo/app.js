@@ -370,6 +370,7 @@ const offerSaveQueues = new Map();
 let workspaceLoadPromise = null;
 let touchDrag = null;
 let desktopDrag = null;
+let pageScrollbarDrag = null;
 const authStorageKey = "gooffer.supabase.session";
 const runtimeConfigStorageKey = "gooffer.runtime.config";
 const analyticsVisitorKey = "gooffer.analytics.visitor";
@@ -4806,14 +4807,20 @@ function ensurePageScrollbar() {
   if (document.querySelector(".page-scrollbar")) return;
   const scrollbar = document.createElement("div");
   scrollbar.className = "page-scrollbar";
-  scrollbar.setAttribute("aria-hidden", "true");
-  scrollbar.innerHTML = '<span class="page-scrollbar-thumb"></span>';
+  scrollbar.setAttribute("role", "scrollbar");
+  scrollbar.setAttribute("aria-label", "页面滚动条");
+  scrollbar.setAttribute("aria-orientation", "vertical");
+  scrollbar.setAttribute("aria-valuemin", "0");
+  scrollbar.setAttribute("aria-valuemax", "100");
+  scrollbar.setAttribute("aria-valuenow", "0");
+  scrollbar.innerHTML = '<span class="page-scrollbar-thumb" title="拖动滚动页面"></span>';
   document.body.appendChild(scrollbar);
 }
 
 function updatePageScrollbar() {
   ensurePageScrollbar();
   const root = document.documentElement;
+  const scrollbar = document.querySelector(".page-scrollbar");
   const scrollHeight = Math.max(root.scrollHeight, document.body.scrollHeight);
   const viewportHeight = window.innerHeight;
   const maxScroll = Math.max(0, scrollHeight - viewportHeight);
@@ -4825,6 +4832,18 @@ function updatePageScrollbar() {
   root.style.setProperty("--page-scrollbar-height", `${thumbHeight}px`);
   root.style.setProperty("--page-scrollbar-top", `${thumbTop}px`);
   root.classList.toggle("has-page-scroll", maxScroll > 0);
+  scrollbar?.setAttribute("aria-valuenow", String(maxScroll ? Math.round(window.scrollY / maxScroll * 100) : 0));
+}
+
+function scrollPageFromScrollbar(clientY, grabOffset = 0) {
+  const root = document.documentElement;
+  const scrollHeight = Math.max(root.scrollHeight, document.body.scrollHeight);
+  const maxScroll = Math.max(0, scrollHeight - window.innerHeight);
+  const thumb = document.querySelector(".page-scrollbar-thumb");
+  const thumbHeight = thumb?.getBoundingClientRect().height || 0;
+  const thumbTravel = Math.max(1, window.innerHeight - thumbHeight - 12);
+  const thumbTop = Math.min(thumbTravel, Math.max(0, clientY - 6 - grabOffset));
+  window.scrollTo({ top: maxScroll * thumbTop / thumbTravel, left: 0, behavior: "auto" });
 }
 
 function finishTouchDrag({ commit = false } = {}) {
@@ -4930,17 +4949,51 @@ document.addEventListener("contextmenu", (event) => {
 });
 
 document.addEventListener("pointerdown", (event) => {
+  const scrollbar = event.target.closest(".page-scrollbar");
+  if (scrollbar && event.button === 0) {
+    const thumb = event.target.closest(".page-scrollbar-thumb");
+    const thumbRect = scrollbar.querySelector(".page-scrollbar-thumb")?.getBoundingClientRect();
+    pageScrollbarDrag = {
+      pointerId: event.pointerId,
+      grabOffset: thumb && thumbRect ? event.clientY - thumbRect.top : (thumbRect?.height || 0) / 2
+    };
+    scrollbar.setPointerCapture?.(event.pointerId);
+    document.body.classList.add("page-scrollbar-dragging");
+    if (!thumb) scrollPageFromScrollbar(event.clientY, pageScrollbarDrag.grabOffset);
+    event.preventDefault();
+    return;
+  }
+
   const backdrop = event.target.closest("[data-modal-backdrop]");
   modalPointerStartedOnBackdrop = Boolean(backdrop && !event.target.closest("[data-modal-panel]"));
 });
 
+document.addEventListener("pointermove", (event) => {
+  if (!pageScrollbarDrag || pageScrollbarDrag.pointerId !== event.pointerId) return;
+  scrollPageFromScrollbar(event.clientY, pageScrollbarDrag.grabOffset);
+  event.preventDefault();
+});
+
 document.addEventListener("pointerup", (event) => {
+  if (pageScrollbarDrag && pageScrollbarDrag.pointerId === event.pointerId) {
+    pageScrollbarDrag = null;
+    document.body.classList.remove("page-scrollbar-dragging");
+    event.preventDefault();
+    return;
+  }
+
   const backdrop = event.target.closest("[data-modal-backdrop]");
   const endedOnBackdrop = Boolean(backdrop && !event.target.closest("[data-modal-panel]"));
   if (modalPointerStartedOnBackdrop && endedOnBackdrop) {
     closeModal();
   }
   modalPointerStartedOnBackdrop = false;
+});
+
+document.addEventListener("pointercancel", (event) => {
+  if (!pageScrollbarDrag || pageScrollbarDrag.pointerId !== event.pointerId) return;
+  pageScrollbarDrag = null;
+  document.body.classList.remove("page-scrollbar-dragging");
 });
 
 document.addEventListener("submit", (event) => {
