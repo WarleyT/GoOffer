@@ -329,6 +329,7 @@ const state = {
   modalError: "",
   activeInterviewId: null,
   pendingDeleteJobId: "",
+  pendingDeleteInterviewId: "",
   jobSwitchDirection: "",
   lastDragAt: 0,
   suppressFunnelMotion: false,
@@ -368,6 +369,7 @@ const offerSaveTimers = new Map();
 const offerSaveQueues = new Map();
 let workspaceLoadPromise = null;
 let touchDrag = null;
+let desktopDrag = null;
 const authStorageKey = "gooffer.supabase.session";
 const runtimeConfigStorageKey = "gooffer.runtime.config";
 const analyticsVisitorKey = "gooffer.analytics.visitor";
@@ -1349,6 +1351,15 @@ async function patchRemoteInterviewFromDemo(interview, patch) {
   });
 }
 
+async function deleteRemoteInterview(interviewId) {
+  if (!isRemoteReady() || !isUuid(interviewId)) return;
+  if (!(await refreshSessionIfNeeded())) return;
+  await supabaseTable(`interviews?id=eq.${encodeURIComponent(interviewId)}`, {
+    method: "DELETE",
+    prefer: "return=minimal"
+  });
+}
+
 async function saveRemoteOfferFromDemo(job) {
   if (!isRemoteReady() || !job.offer) return;
   if (!(await refreshSessionIfNeeded())) return;
@@ -1424,6 +1435,13 @@ function visibleFunnelStatuses() {
 
 function jobsByStatus(list, status) {
   return list.filter((job) => job.status === status);
+}
+
+function jobsByStatusAndPriority(list, status) {
+  return jobsByStatus(list, status)
+    .map((job, index) => ({ job, index }))
+    .sort((left, right) => priorityRank(left.job.priority) - priorityRank(right.job.priority) || left.index - right.index)
+    .map(({ job }) => job);
 }
 
 function badge(label, extra = "") {
@@ -1672,7 +1690,7 @@ function renderShell(content) {
     <div class="app-shell screen-${state.screen}${sidebarStateClass}">
       <aside class="sidebar" aria-label="主导航">
         <div class="brand">
-          <div class="brand-mark material-symbols-outlined" aria-hidden="true">workspaces</div>
+          <img class="brand-mark" src="./logo.svg" alt="" aria-hidden="true">
           <div class="brand-name brand-logo" aria-label="GoOffer">
             <span class="brand-logo-go">Go</span><span class="brand-logo-offer">Offer</span>
           </div>
@@ -1846,14 +1864,14 @@ function renderDashboardFunnel() {
     <div class="mini-funnel">
       ${statuses.map((status) => {
         const meta = statusMeta[status];
-        const items = jobsByStatus(jobs, status);
+        const items = jobsByStatusAndPriority(jobs, status);
         const title = status === "已拿Offer" ? "offer" : meta.title;
         return `
           <section class="mini-funnel-step ${statusTone[status]}" data-funnel-drop-status="${status}">
             <div class="mini-funnel-head">
               <span class="material-symbols-outlined" aria-hidden="true">${meta.icon}</span>
               <strong>${title}</strong>
-              <small>${jobsByStatus(jobs, status).length}</small>
+              <small>${items.length}</small>
             </div>
             <div class="mini-funnel-jobs">
               ${items.map((job) => `
@@ -2775,6 +2793,7 @@ function renderModal() {
   const map = {
     job: renderJobModal,
     interview: renderInterviewModal,
+    deleteInterview: renderDeleteInterviewModal,
     offer: renderOfferModal,
     offerSelect: renderOfferSelectModal,
     deleteJob: renderDeleteJobModal,
@@ -2938,6 +2957,29 @@ function renderDeleteJobModal() {
   );
 }
 
+function renderDeleteInterviewModal() {
+  const job = activeJob();
+  const interviewId = state.pendingDeleteInterviewId || state.activeInterviewId;
+  const interview = job?.interviews.find((item) => item.id === interviewId);
+  if (!job || !interview) {
+    return modalShell("删除面试记录", emptyInline("当前没有可删除的面试记录。"), button("关闭", "close-modal", "surface"));
+  }
+  const body = `
+    <section class="delete-confirm">
+      <span class="material-symbols-outlined" aria-hidden="true">warning</span>
+      <div>
+        <h3>确认删除这条面试记录？</h3>
+        <p>${escapeHtml(interview.round)} 的时间、结果和问答内容都会永久移除。</p>
+      </div>
+    </section>
+  `;
+  return modalShell(
+    "删除面试记录",
+    body,
+    `${button("取消", "close-modal", "surface")} ${button("确认删除", "delete-interview", "danger")}`
+  );
+}
+
 function jobRecognitionPanel() {
   return `
     <section class="job-recognition-panel full">
@@ -2999,7 +3041,12 @@ function renderInterviewModal() {
       `, addQaButton)}
     </form>
   `;
-  return modalShell(editing ? "编辑面试记录" : "添加面试记录", body, `${button("取消", "close-modal", "surface")} ${button(editing ? "保存修改" : "保存面试", "save-interview")}`);
+  const deleteButton = editing ? button("删除记录", "confirm-delete-interview", "danger") : "";
+  return modalShell(
+    editing ? "编辑面试记录" : "添加面试记录",
+    body,
+    `<span class="modal-footer-leading">${deleteButton}</span><span class="modal-footer-actions">${button("取消", "close-modal", "surface")} ${button(editing ? "保存修改" : "保存面试", "save-interview")}</span>`
+  );
 }
 
 function roundField(name, label, roundPrefix, value, placeholder) {
@@ -3931,6 +3978,33 @@ async function saveInterview() {
   showToast(existingIndex >= 0 ? "面试记录已更新" : "面试记录已保存");
 }
 
+async function deletePendingInterview() {
+  const job = activeJob();
+  const interviewId = state.pendingDeleteInterviewId || state.activeInterviewId;
+  const index = job?.interviews.findIndex((item) => item.id === interviewId) ?? -1;
+  if (!job || index < 0) {
+    closeModal();
+    return;
+  }
+
+  await deleteRemoteInterview(interviewId);
+  job.interviews.splice(index, 1);
+  syncJobData(job);
+  saveWorkspaceCache();
+  state.pendingDeleteInterviewId = "";
+  state.activeInterviewId = null;
+  state.modal = null;
+  state.modalError = "";
+  document.body.classList.remove("modal-open");
+  trackEvent("interview_deleted", {
+    entityType: "interview",
+    entityId: isUuid(interviewId) ? interviewId : undefined,
+    properties: { job_id: job.id }
+  });
+  showToast("面试记录已删除");
+  render({ scrollTop: window.scrollY || 0 });
+}
+
 async function saveOffer() {
   const data = readForm("offer-form");
   const totalComp = formatMoneyValue(data.totalCompAmount, data.totalCompUnit ?? "w");
@@ -4426,6 +4500,7 @@ function closeModal() {
   state.modalError = "";
   state.activeInterviewId = null;
   state.pendingDeleteJobId = "";
+  state.pendingDeleteInterviewId = "";
   document.body.classList.remove("modal-open");
   render();
 }
@@ -4770,6 +4845,40 @@ function finishTouchDrag({ commit = false } = {}) {
     state.lastDragAt = Date.now();
     if (commit && status) commitJobDrop(jobId, status, scroll);
   }
+}
+
+function desktopAutoScrollFrame() {
+  if (!desktopDrag?.active) return;
+  const { clientX, clientY, scrollContainer } = desktopDrag;
+
+  if (scrollContainer) {
+    const rect = scrollContainer.getBoundingClientRect();
+    const horizontalEdge = Math.min(110, rect.width * 0.18);
+    let horizontalSpeed = 0;
+    if (clientX < rect.left + horizontalEdge) {
+      horizontalSpeed = -Math.ceil(22 * (1 - Math.max(0, clientX - rect.left) / horizontalEdge));
+    } else if (clientX > rect.right - horizontalEdge) {
+      horizontalSpeed = Math.ceil(22 * (1 - Math.max(0, rect.right - clientX) / horizontalEdge));
+    }
+    if (horizontalSpeed) scrollContainer.scrollLeft += horizontalSpeed;
+  }
+
+  const verticalEdge = Math.min(130, window.innerHeight * 0.2);
+  let verticalSpeed = 0;
+  if (clientY < verticalEdge) {
+    verticalSpeed = -Math.ceil(20 * (1 - Math.max(0, clientY) / verticalEdge));
+  } else if (clientY > window.innerHeight - verticalEdge) {
+    verticalSpeed = Math.ceil(20 * (1 - Math.max(0, window.innerHeight - clientY) / verticalEdge));
+  }
+  if (verticalSpeed) window.scrollBy(0, verticalSpeed);
+
+  desktopDrag.raf = window.requestAnimationFrame(desktopAutoScrollFrame);
+}
+
+function finishDesktopDrag() {
+  if (!desktopDrag) return;
+  if (desktopDrag.raf) window.cancelAnimationFrame(desktopDrag.raf);
+  desktopDrag = null;
 }
 
 document.addEventListener("touchstart", (event) => {
@@ -5197,6 +5306,19 @@ document.addEventListener("click", (event) => {
     return;
   }
 
+  if (action === "confirm-delete-interview") {
+    state.pendingDeleteInterviewId = state.activeInterviewId;
+    state.modal = "deleteInterview";
+    state.modalError = "";
+    render();
+    return;
+  }
+
+  if (action === "delete-interview") {
+    void withLoadingToast("delete-interview", "正在删除面试记录...", deletePendingInterview);
+    return;
+  }
+
   if (action === "save-offer") {
     void withLoadingToast("save-offer", "正在保存 Offer...", saveOffer);
     return;
@@ -5295,9 +5417,20 @@ document.addEventListener("dragstart", (event) => {
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", dragCard.dataset.dragJobId);
   dragCard.classList.add("is-dragging");
+  desktopDrag = {
+    active: true,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    scrollContainer: dragCard.closest(".mini-funnel, .funnel-board, .funnel-list"),
+    raf: window.requestAnimationFrame(desktopAutoScrollFrame)
+  };
 });
 
 document.addEventListener("dragover", (event) => {
+  if (desktopDrag) {
+    desktopDrag.clientX = event.clientX;
+    desktopDrag.clientY = event.clientY;
+  }
   const dropTarget = event.target.closest("[data-funnel-drop-status]");
   if (!dropTarget) return;
 
@@ -5322,11 +5455,13 @@ document.addEventListener("drop", (event) => {
   event.preventDefault();
   const jobId = event.dataTransfer.getData("text/plain");
   const status = dropTarget.dataset.funnelDropStatus;
+  finishDesktopDrag();
   commitJobDrop(jobId, status);
 });
 
 document.addEventListener("dragend", () => {
   state.lastDragAt = Date.now();
+  finishDesktopDrag();
   clearDragTargets();
 });
 

@@ -686,13 +686,11 @@ small {
 .app-shell.sidebar-collapsed .brand-mark {
   width: 56px;
   height: 56px;
-  display: inline-grid;
-  place-items: center;
+  display: block;
+  object-fit: contain;
+  padding: 5px;
   border-radius: 999px;
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-  font-size: 28px;
-  font-variation-settings: "FILL" 1, "wght" 700, "GRAD" 0, "opsz" 28;
+  background: var(--surface-lowest);
   box-shadow: var(--shadow-soft);
 }
 
@@ -4036,8 +4034,19 @@ body.is-scrolled .topbar-subtitle {
 .modal-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 12px;
   border-top: 1px solid var(--surface-high);
+}
+
+.modal-footer-leading {
+  display: inline-flex;
+  margin-right: auto;
+}
+
+.modal-footer-actions {
+  display: inline-flex;
+  gap: 12px;
 }
 
 .modal-footer-split {
@@ -5159,6 +5168,20 @@ body.is-scrolled .topbar-subtitle {
     gap: 8px;
   }
 
+  .modal-interview .modal-footer {
+    align-items: stretch;
+  }
+
+  .modal-interview .modal-footer-leading,
+  .modal-interview .modal-footer-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .modal-interview .modal-footer-actions {
+    margin-left: auto;
+  }
+
   .modal-footer .button {
     min-height: 44px;
     padding: 0 16px;
@@ -5213,6 +5236,16 @@ body.is-scrolled .topbar-subtitle {
   .form-section-head {
     grid-template-columns: 40px minmax(0, 1fr);
     gap: 12px;
+  }
+
+  .interview-form .form-section-action {
+    width: 100%;
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+
+  .interview-form .form-section-action .section-action-button {
+    width: 100%;
   }
 
   .form-section-head > .material-symbols-outlined {

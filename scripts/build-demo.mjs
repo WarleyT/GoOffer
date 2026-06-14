@@ -16,4 +16,6 @@ for (const file of files) {
   await copyFile(join(demo, file), target);
 }
 
+await copyFile(join(root, "LOGO.svg"), join(dist, "logo.svg"));
+
 console.log("Built GoOffer demo UI to dist/");
