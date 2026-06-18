@@ -375,6 +375,7 @@ const authStorageKey = "gooffer.supabase.session";
 const runtimeConfigStorageKey = "gooffer.runtime.config";
 const analyticsVisitorKey = "gooffer.analytics.visitor";
 const analyticsSessionKey = "gooffer.analytics.session";
+const pendingJobPatchStoragePrefix = "gooffer.pending.job-patches";
 
 function analyticsId(storage, key) {
   let value = storage.getItem(key);
@@ -463,6 +464,11 @@ function workspaceStorageKey() {
   return userId ? `gooffer.workspace.${userId}` : "";
 }
 
+function pendingJobPatchStorageKey() {
+  const userId = state.auth.user?.id || state.auth.session?.user?.id;
+  return userId ? `${pendingJobPatchStoragePrefix}.${userId}` : "";
+}
+
 function saveWorkspaceCache() {
   const key = workspaceStorageKey();
   if (!key) return;
@@ -477,6 +483,65 @@ function saveWorkspaceCache() {
   } catch {
     // Storage can be unavailable in private browsing; remote persistence remains authoritative.
   }
+}
+
+function readPendingJobPatches() {
+  const key = pendingJobPatchStorageKey();
+  if (!key) return {};
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePendingJobPatches(patches) {
+  const key = pendingJobPatchStorageKey();
+  if (!key) return;
+  try {
+    const entries = Object.entries(patches || {});
+    if (!entries.length) {
+      localStorage.removeItem(key);
+      return;
+    }
+    localStorage.setItem(key, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // If local storage is unavailable, remote persistence still runs normally.
+  }
+}
+
+function queuePendingJobPatch(jobId, patch) {
+  if (!isUuid(jobId) || !patch || !Object.keys(patch).length) return;
+  const patches = readPendingJobPatches();
+  patches[jobId] = {
+    ...(patches[jobId] || {}),
+    ...patch,
+    _queuedAt: Date.now()
+  };
+  writePendingJobPatches(patches);
+}
+
+function clearPendingJobPatch(jobId, patch = null) {
+  if (!isUuid(jobId)) return;
+  const patches = readPendingJobPatches();
+  const existing = patches[jobId];
+  if (!existing) return;
+  if (!patch) {
+    delete patches[jobId];
+  } else {
+    Object.entries(patch).forEach(([key, value]) => {
+      if (Object.is(existing[key], value)) delete existing[key];
+    });
+    delete existing._queuedAt;
+    if (Object.keys(existing).length) {
+      existing._queuedAt = Date.now();
+      patches[jobId] = existing;
+    } else {
+      delete patches[jobId];
+    }
+  }
+  writePendingJobPatches(patches);
 }
 
 function restoreWorkspaceCache() {
@@ -1139,7 +1204,44 @@ async function loadRemoteWorkspace() {
     state.activeJobId = "";
     state.offerSelection = [];
   }
+  await flushPendingJobPatches();
   saveWorkspaceCache();
+}
+
+async function flushPendingJobPatches() {
+  if (!isRemoteReady()) return;
+  if (!(await refreshSessionIfNeeded())) return;
+  const patches = readPendingJobPatches();
+  const entries = Object.entries(patches)
+    .map(([jobId, patch]) => [jobId, { ...patch }])
+    .filter(([jobId, patch]) => isUuid(jobId) && patch && Object.keys(patch).some((key) => key !== "_queuedAt"));
+  if (!entries.length) return;
+
+  let appliedCount = 0;
+  for (const [jobId, patch] of entries) {
+    delete patch._queuedAt;
+    const job = jobs.find((item) => item.id === jobId);
+    if (!job) {
+      clearPendingJobPatch(jobId);
+      continue;
+    }
+    try {
+      await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+        prefer: "return=minimal"
+      });
+      Object.assign(job, patch);
+      syncJobData(job);
+      clearPendingJobPatch(jobId, patch);
+      appliedCount += 1;
+    } catch {
+      // Keep the patch in local storage; it can be retried on the next successful session.
+    }
+  }
+  if (appliedCount && !state.booting) {
+    showToast(`已恢复同步 ${appliedCount} 条未完成修改`);
+  }
 }
 
 function refreshWorkspaceInBackground() {
@@ -1163,7 +1265,7 @@ function refreshWorkspaceInBackground() {
 
 async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
-  if (!(await refreshSessionIfNeeded())) return job;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   const salary = parseMoneyParts(job.salary, "");
   const payload = await fetchWithTimeout("/api/jobs", {
     method: "POST",
@@ -1192,7 +1294,7 @@ async function createRemoteJobFromDemo(job) {
 
 async function updateRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   if (!isUuid(job.id)) return;
   const salary = parseMoneyParts(job.salary, "");
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
@@ -1218,21 +1320,27 @@ async function updateRemoteJobFromDemo(job) {
 
 async function patchRemoteJobFromDemo(job, patch) {
   if (!isRemoteReady()) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   if (!isUuid(job.id)) {
     await persistLocalJobAsRemote(job);
     return;
   }
-  await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
-    method: "PATCH",
-    body: JSON.stringify(patch),
-    prefer: "return=minimal"
-  });
+  queuePendingJobPatch(job.id, patch);
+  try {
+    await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+      prefer: "return=minimal"
+    });
+    clearPendingJobPatch(job.id, patch);
+  } catch (error) {
+    throw error;
+  }
 }
 
 async function deleteRemoteJobFromDemo(jobId) {
   if (!isRemoteReady()) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   if (!isUuid(jobId)) return;
   await supabaseTable(`jobs?id=eq.${encodeURIComponent(jobId)}`, {
     method: "DELETE",
@@ -1269,7 +1377,7 @@ async function persistLocalJobAsRemote(job) {
 
 async function saveRemoteInterviewFromDemo(job, interview, previousInterview = null) {
   if (!isRemoteReady()) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   const roundParts = splitRoundName(interview.round, job.interviews.indexOf(interview));
   const interviewPayload = {
     round_label: roundParts.label,
@@ -1344,7 +1452,7 @@ async function saveRemoteInterviewFromDemo(job, interview, previousInterview = n
 
 async function patchRemoteInterviewFromDemo(interview, patch) {
   if (!isRemoteReady() || !isUuid(interview.id)) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   await supabaseTable(`interviews?id=eq.${encodeURIComponent(interview.id)}`, {
     method: "PATCH",
     body: JSON.stringify(patch),
@@ -1354,7 +1462,7 @@ async function patchRemoteInterviewFromDemo(interview, patch) {
 
 async function deleteRemoteInterview(interviewId) {
   if (!isRemoteReady() || !isUuid(interviewId)) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   await supabaseTable(`interviews?id=eq.${encodeURIComponent(interviewId)}`, {
     method: "DELETE",
     prefer: "return=minimal"
@@ -1363,7 +1471,7 @@ async function deleteRemoteInterview(interviewId) {
 
 async function saveRemoteOfferFromDemo(job) {
   if (!isRemoteReady() || !job.offer) return;
-  if (!(await refreshSessionIfNeeded())) return;
+  if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   const total = parseMoneyParts(job.offer.totalComp, "w");
   const payload = {
     user_id: state.auth.user.id,
@@ -4898,6 +5006,7 @@ function finishDesktopDrag() {
   if (!desktopDrag) return;
   if (desktopDrag.raf) window.cancelAnimationFrame(desktopDrag.raf);
   desktopDrag = null;
+  document.body.classList.remove("desktop-drag-active");
 }
 
 document.addEventListener("touchstart", (event) => {
@@ -5470,6 +5579,7 @@ document.addEventListener("dragstart", (event) => {
   event.dataTransfer.effectAllowed = "move";
   event.dataTransfer.setData("text/plain", dragCard.dataset.dragJobId);
   dragCard.classList.add("is-dragging");
+  document.body.classList.add("desktop-drag-active");
   desktopDrag = {
     active: true,
     clientX: event.clientX,
@@ -5477,6 +5587,14 @@ document.addEventListener("dragstart", (event) => {
     scrollContainer: dragCard.closest(".mini-funnel, .funnel-board, .funnel-list"),
     raf: window.requestAnimationFrame(desktopAutoScrollFrame)
   };
+});
+
+document.addEventListener("drag", (event) => {
+  if (!desktopDrag) return;
+  if (event.clientX || event.clientY) {
+    desktopDrag.clientX = event.clientX;
+    desktopDrag.clientY = event.clientY;
+  }
 });
 
 document.addEventListener("dragover", (event) => {
