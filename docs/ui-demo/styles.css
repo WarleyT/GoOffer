@@ -128,6 +128,70 @@ body.modal-open {
     0 4px 12px rgba(42, 36, 20, 0.24);
 }
 
+.job-selection-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-notification[hidden] {
+  display: none;
+}
+
+.job-selection-count {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.job-selection-actions .icon-button {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  padding: 6px;
+}
+
+.job-selection-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.job-selectable {
+  position: relative;
+  cursor: pointer;
+}
+
+.job-selectable.job-selected {
+  outline: 2px solid var(--primary-fixed-dim);
+  outline-offset: -2px;
+  background: #fff8d8;
+}
+
+.job-selection-marker {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 1;
+  color: var(--primary);
+  background: var(--surface-lowest);
+  border-radius: 50%;
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--primary);
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+  font-weight: 900;
+  pointer-events: none;
+}
+
+.bulk-status-field {
+  margin-top: 20px;
+}
+
 .auth-gate {
   min-height: 100vh;
   display: grid;

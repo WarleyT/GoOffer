@@ -354,6 +354,9 @@ const state = {
   aiProvider: null,
   expandedJobDescriptions: new Set(),
   quickEditField: null,
+  jobSelectionMode: false,
+  selectedJobIds: new Set(),
+  bulkJobsBusy: false,
   sharedJob: null,
   shareInvalid: false
 };
@@ -672,6 +675,10 @@ function authHeaders(extra = {}) {
 }
 
 function saveSession(session) {
+  if (state.auth.user?.id !== session?.user?.id) {
+    state.jobSelectionMode = false;
+    state.selectedJobIds.clear();
+  }
   state.auth.session = session || null;
   state.auth.user = session?.user || null;
   if (session) {
@@ -1152,6 +1159,7 @@ async function removeLegacyPreviewJobs(jobRows) {
 }
 
 async function loadRemoteWorkspace() {
+  if (state.bulkJobsBusy) return;
   if (!isRemoteReady()) return;
   if (!(await refreshSessionIfNeeded())) return;
   const payload = await fetchWithTimeout("/api/jobs", {
@@ -1787,7 +1795,7 @@ function renderShell(content) {
   const appliedProgress = Math.min(100, (progressedJobs.length / totalJobs) * 100).toFixed(2);
   const topbarActions = {
     dashboard: button("新增岗位", "open-job-modal"),
-    jobs: button("新增岗位", "open-job-modal"),
+    jobs: renderJobSelectionActions(),
     detail: `
       ${button("分享", "share-detail", "surface")}
       ${button("编辑岗位", "open-job-modal", "dark")}
@@ -1849,7 +1857,7 @@ function renderShell(content) {
                 : `<span class="material-symbols-outlined" aria-hidden="true">person</span>`}
             </button>
             ${topbarActions[state.screen] || ""}
-            <button class="icon-button topbar-notification" type="button" data-action="toast" data-message="提醒中心会在后续版本接入" aria-label="通知">
+            <button class="icon-button topbar-notification" ${state.screen === "jobs" && state.jobSelectionMode ? "hidden" : ""} type="button" data-action="toast" data-message="提醒中心会在后续版本接入" aria-label="通知">
               <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
             </button>
           </div>
@@ -2367,6 +2375,103 @@ function selectControl(id, label, options, value) {
     className: `toolbar-select ${id}`,
     displayPrefix: label
   });
+}
+
+function renderJobSelectionActions() {
+  const paths = {
+    checklist: '<path d="m3 6 2 2 3-4M11 6h10M3 13h4M11 13h10M3 20h4M11 20h10"/>',
+    drive_file_move: '<path d="M3 7h7l2-3h9v16H3zM8 13h8m-3-3 3 3-3 3"/>',
+    delete: '<path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/>',
+    close: '<path d="m6 6 12 12M6 18 18 6"/>'
+  };
+  const iconButton = (icon, label, action, disabled = false) => `<button class="icon-button" type="button" data-action="${action}" title="${label}" aria-label="${label}" ${disabled ? "disabled" : ""}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[icon]}</svg></button>`;
+  if (!state.jobSelectionMode) return iconButton("checklist", "多选岗位", "start-job-selection") + button("新增岗位", "open-job-modal");
+  const disabled = !state.selectedJobIds.size || state.bulkJobsBusy;
+  return `<div class="job-selection-actions"><span class="job-selection-count" role="status">已选 ${state.selectedJobIds.size}</span>${iconButton("drive_file_move", "移动选中岗位", "bulk-move-jobs", disabled)}${iconButton("delete", "删除选中岗位", "bulk-delete-jobs", disabled)}${iconButton("close", "取消多选", "cancel-job-selection", state.bulkJobsBusy)}</div>`;
+}
+
+function renderBulkJobsModal() {
+  const deleting = state.bulkJobAction === "delete";
+  const count = state.selectedJobIds.size;
+  return modalShell(deleting ? "批量删除岗位" : "批量移动岗位",
+    `<p>已选择 ${count} 个岗位。${deleting ? "删除后关联的面试记录、Offer 和总结也会被删除，无法撤销。" : "选择这些岗位的新投递状态。"}</p>${deleting ? "" : `<div class="bulk-status-field">${selectField("bulkStatus", "投递状态", statuses, "待投递")}</div>`}`,
+    `${button("取消", "close-modal", "surface")} ${button(deleting ? "确认删除" : "确认移动", "confirm-bulk-jobs", deleting ? "dark" : "primary", state.bulkJobsBusy ? "disabled" : "")}`);
+}
+
+function decorateJobSelection() {
+  if (state.screen !== "jobs" || !state.jobSelectionMode) return;
+  document.querySelectorAll('.screen-jobs [data-action="select-job"]').forEach((card) => {
+    const selected = state.selectedJobIds.has(card.dataset.jobId);
+    card.classList.add("job-selectable");
+    card.classList.toggle("job-selected", selected);
+    card.setAttribute("aria-pressed", String(selected));
+    card.setAttribute("draggable", "false");
+    const marker = document.createElement("span");
+    marker.className = "job-selection-marker";
+    marker.setAttribute("aria-hidden", "true");
+    marker.textContent = selected ? "✓" : "";
+    card.appendChild(marker);
+  });
+}
+
+async function applyBulkJobs() {
+  if (state.bulkJobsBusy) return;
+  if (workspaceLoadPromise || pendingOperations.size) {
+    showToast("其他数据正在同步，请完成后重试");
+    return;
+  }
+  const selected = jobs.filter((job) => state.selectedJobIds.has(job.id));
+  const userId = state.auth.user?.id;
+  if (!selected.length) return;
+  const deleting = state.bulkJobAction === "delete";
+  const status = document.querySelector('[name="bulkStatus"]')?.value;
+  if (!deleting && !statuses.includes(status)) return;
+  state.bulkJobsBusy = true;
+  const stop = showLoadingToast(deleting ? "正在删除岗位..." : "正在移动岗位...");
+  render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
+  const failed = [];
+  try {
+    for (const job of selected) {
+      try {
+        if (userId) {
+          if (state.auth.user?.id !== userId) throw new Error("登录已变化，请重新登录后重试");
+          if (!isRemoteReady() || !isUuid(job.id)) throw new Error("云端尚未就绪，请刷新后重试");
+          const rows = await supabaseTable(`jobs?id=eq.${encodeURIComponent(job.id)}&select=id`, {
+            method: deleting ? "DELETE" : "PATCH",
+            ...(deleting ? {} : { body: JSON.stringify({ status }) }),
+            prefer: "return=representation"
+          });
+          if (!rows.some((row) => row.id === job.id)) throw new Error("岗位未更新，请刷新后重试");
+        }
+        const queued = readPendingJobPatches()[job.id];
+        clearPendingJobPatch(job.id, deleting ? null : { status: queued?.status });
+        if (deleting) {
+          const index = jobs.findIndex((item) => item.id === job.id);
+          if (index >= 0) jobs.splice(index, 1);
+          state.offerSelection = state.offerSelection.filter((id) => id !== job.id);
+          state.expandedJobDescriptions.delete(job.id);
+        } else {
+          job.status = status;
+          job.updated = "刚刚";
+          syncJobData(job);
+        }
+        state.selectedJobIds.delete(job.id);
+      } catch (error) {
+        failed.push(error instanceof Error ? error.message : "保存失败");
+      }
+    }
+    if (!jobs.some((job) => job.id === state.activeJobId)) state.activeJobId = jobs[0]?.id || "";
+    saveWorkspaceCache();
+    state.modal = null;
+    state.modalError = "";
+    document.body.classList.remove("modal-open");
+    if (!failed.length) state.jobSelectionMode = false;
+    showToast(failed.length ? `完成 ${selected.length - failed.length} 个，${failed.length} 个失败：${failed[0]}` : `已${deleting ? "删除" : "移动"} ${selected.length} 个岗位`);
+  } finally {
+    state.bulkJobsBusy = false;
+    stop();
+    render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
+  }
 }
 
 function renderJobCard(job) {
@@ -2906,6 +3011,7 @@ function renderModal() {
     offer: renderOfferModal,
     offerSelect: renderOfferSelectModal,
     deleteJob: renderDeleteJobModal,
+    bulkJobs: renderBulkJobsModal,
     login: renderLoginModal,
     aiSettings: renderAiSettingsModal,
     aiHelp: renderAiHelpModal
@@ -4727,6 +4833,7 @@ function render(options = {}) {
     offers: renderOffers
   };
   app.innerHTML = renderShell(screenMap[state.screen]());
+  decorateJobSelection();
   modalRoot.innerHTML = renderModal();
   renderToast();
   document.body.classList.toggle("modal-open", Boolean(state.modal));
@@ -5010,6 +5117,7 @@ function finishDesktopDrag() {
 }
 
 document.addEventListener("touchstart", (event) => {
+  if (state.screen === "jobs" && state.jobSelectionMode) return;
   if (event.touches.length !== 1 || touchDrag) return;
   const card = event.target.closest("[data-drag-job-id]");
   if (!card || !card.closest(".mini-funnel, .funnel-board, .funnel-list")) return;
@@ -5145,6 +5253,25 @@ document.addEventListener("click", (event) => {
   }
 
   const action = actionEl.dataset.action;
+  if (state.bulkJobsBusy) return;
+  if (action === "start-job-selection" || action === "cancel-job-selection") {
+    state.jobSelectionMode = action === "start-job-selection";
+    state.selectedJobIds.clear();
+    render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
+    return;
+  }
+  if (action === "bulk-move-jobs" || action === "bulk-delete-jobs") {
+    if (!state.selectedJobIds.size) return;
+    state.bulkJobAction = action === "bulk-delete-jobs" ? "delete" : "move";
+    state.modal = "bulkJobs";
+    state.modalError = "";
+    render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
+    return;
+  }
+  if (action === "confirm-bulk-jobs") {
+    void applyBulkJobs();
+    return;
+  }
   if (action === "toggle-select") {
     const select = actionEl.closest("[data-custom-select]");
     if (!select) return;
@@ -5383,6 +5510,13 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "select-job") {
+    if (state.screen === "jobs" && state.jobSelectionMode) {
+      const id = actionEl.dataset.jobId;
+      if (state.selectedJobIds.has(id)) state.selectedJobIds.delete(id);
+      else state.selectedJobIds.add(id);
+      render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
+      return;
+    }
     if (Date.now() - state.lastDragAt < 240) return;
     state.activeJobId = actionEl.dataset.jobId;
     navigateTo("detail");
@@ -5573,6 +5707,10 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("dragstart", (event) => {
+  if (state.screen === "jobs" && state.jobSelectionMode) {
+    event.preventDefault();
+    return;
+  }
   const dragCard = event.target.closest("[data-drag-job-id]");
   if (!dragCard) return;
 
