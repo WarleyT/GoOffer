@@ -135,6 +135,44 @@ body.modal-open {
   gap: 6px;
 }
 
+.dashboard-funnel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.dashboard-funnel-card > .section-head {
+  flex-wrap: wrap;
+}
+
+.dashboard-funnel-card > .section-head h2 {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dashboard-funnel-actions .text-link {
+  white-space: nowrap;
+}
+
+.mini-funnel-jobs .job-selection-marker {
+  left: auto;
+  top: 5px;
+  right: 5px;
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+}
+
+.mini-funnel-jobs .job-selectable {
+  padding-right: 27px;
+}
+
 .topbar-notification[hidden] {
   display: none;
 }

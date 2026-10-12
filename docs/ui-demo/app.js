@@ -371,6 +371,7 @@ const pendingOperations = new Set();
 const offerSaveTimers = new Map();
 const offerSaveQueues = new Map();
 let workspaceLoadPromise = null;
+let sessionRefreshPromise = null;
 let touchDrag = null;
 let desktopDrag = null;
 let pageScrollbarDrag = null;
@@ -715,6 +716,16 @@ function sessionExpiresSoon(session = state.auth.session) {
 }
 
 async function refreshSessionIfNeeded({ force = false } = {}) {
+  if (sessionRefreshPromise) return sessionRefreshPromise;
+  sessionRefreshPromise = refreshSessionOnce({ force });
+  try {
+    return await sessionRefreshPromise;
+  } finally {
+    sessionRefreshPromise = null;
+  }
+}
+
+async function refreshSessionOnce({ force = false } = {}) {
   const session = state.auth.session;
   if (!session?.access_token || !state.auth.configured) return false;
   if (!session.refresh_token) return true;
@@ -1275,13 +1286,10 @@ async function createRemoteJobFromDemo(job) {
   if (!isRemoteReady()) return job;
   if (!(await refreshSessionIfNeeded())) throw new Error("登录状态已失效，已自动退出。");
   const salary = parseMoneyParts(job.salary, "");
-  const payload = await fetchWithTimeout("/api/jobs", {
+  const rows = await supabaseTable("jobs?select=*", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${state.auth.session.access_token}`,
-      "content-type": "application/json"
-    },
     body: JSON.stringify({
+      user_id: state.auth.user.id,
       company: job.company,
       title: job.title,
       city: job.city,
@@ -1296,8 +1304,9 @@ async function createRemoteJobFromDemo(job) {
       logo: normalizeLogoText(job.logo, job.company),
       logo_tone: job.logoTone
     })
-  }, 15000).then((response) => readJsonResponse(response, "岗位保存失败。"));
-  return mapRemoteJob(payload.job);
+  });
+  if (!rows[0]?.id) throw new Error("岗位保存未完成，请重试。");
+  return mapRemoteJob(rows[0]);
 }
 
 async function updateRemoteJobFromDemo(job) {
@@ -1928,7 +1937,7 @@ function renderDashboard() {
       <article class="card card-pad panel-list dashboard-funnel-card full-span">
         <div class="section-head">
           <h2>投递漏斗</h2>
-          <span class="text-link" data-action="nav" data-screen="jobs">查看全部</span>
+          <div class="dashboard-funnel-actions">${renderJobSelectionActions(false)}<span class="text-link" data-action="nav" data-screen="jobs">查看全部</span></div>
         </div>
         ${renderDashboardFunnel()}
       </article>
@@ -2377,7 +2386,7 @@ function selectControl(id, label, options, value) {
   });
 }
 
-function renderJobSelectionActions() {
+function renderJobSelectionActions(includeAdd = true) {
   const paths = {
     checklist: '<path d="m3 6 2 2 3-4M11 6h10M3 13h4M11 13h10M3 20h4M11 20h10"/>',
     drive_file_move: '<path d="M3 7h7l2-3h9v16H3zM8 13h8m-3-3 3 3-3 3"/>',
@@ -2385,7 +2394,7 @@ function renderJobSelectionActions() {
     close: '<path d="m6 6 12 12M6 18 18 6"/>'
   };
   const iconButton = (icon, label, action, disabled = false) => `<button class="icon-button" type="button" data-action="${action}" title="${label}" aria-label="${label}" ${disabled ? "disabled" : ""}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[icon]}</svg></button>`;
-  if (!state.jobSelectionMode) return iconButton("checklist", "多选岗位", "start-job-selection") + button("新增岗位", "open-job-modal");
+  if (!state.jobSelectionMode) return iconButton("checklist", "多选岗位", "start-job-selection") + (includeAdd ? button("新增岗位", "open-job-modal") : "");
   const disabled = !state.selectedJobIds.size || state.bulkJobsBusy;
   return `<div class="job-selection-actions"><span class="job-selection-count" role="status">已选 ${state.selectedJobIds.size}</span>${iconButton("drive_file_move", "移动选中岗位", "bulk-move-jobs", disabled)}${iconButton("delete", "删除选中岗位", "bulk-delete-jobs", disabled)}${iconButton("close", "取消多选", "cancel-job-selection", state.bulkJobsBusy)}</div>`;
 }
@@ -2399,8 +2408,8 @@ function renderBulkJobsModal() {
 }
 
 function decorateJobSelection() {
-  if (state.screen !== "jobs" || !state.jobSelectionMode) return;
-  document.querySelectorAll('.screen-jobs [data-action="select-job"]').forEach((card) => {
+  if (!["jobs", "dashboard"].includes(state.screen) || !state.jobSelectionMode) return;
+  document.querySelectorAll('.screen-jobs [data-action="select-job"], .screen-dashboard .mini-funnel [data-action="select-job"]').forEach((card) => {
     const selected = state.selectedJobIds.has(card.dataset.jobId);
     card.classList.add("job-selectable");
     card.classList.toggle("job-selected", selected);
@@ -2431,7 +2440,7 @@ async function applyBulkJobs() {
   render({ scrollTop: window.scrollY, funnelScroll: funnelScrollSnapshot() });
   const failed = [];
   try {
-    for (const job of selected) {
+    const processJob = async (job) => {
       try {
         if (userId) {
           if (state.auth.user?.id !== userId) throw new Error("登录已变化，请重新登录后重试");
@@ -2459,7 +2468,12 @@ async function applyBulkJobs() {
       } catch (error) {
         failed.push(error instanceof Error ? error.message : "保存失败");
       }
-    }
+    };
+    // Limit concurrency so large selections do not flood the database connection.
+    let nextIndex = 0;
+    await Promise.all(Array.from({ length: Math.min(4, selected.length) }, async () => {
+      while (nextIndex < selected.length) await processJob(selected[nextIndex++]);
+    }));
     if (!jobs.some((job) => job.id === state.activeJobId)) state.activeJobId = jobs[0]?.id || "";
     saveWorkspaceCache();
     state.modal = null;
@@ -5117,7 +5131,7 @@ function finishDesktopDrag() {
 }
 
 document.addEventListener("touchstart", (event) => {
-  if (state.screen === "jobs" && state.jobSelectionMode) return;
+  if (["jobs", "dashboard"].includes(state.screen) && state.jobSelectionMode) return;
   if (event.touches.length !== 1 || touchDrag) return;
   const card = event.target.closest("[data-drag-job-id]");
   if (!card || !card.closest(".mini-funnel, .funnel-board, .funnel-list")) return;
@@ -5510,7 +5524,7 @@ document.addEventListener("click", (event) => {
   }
 
   if (action === "select-job") {
-    if (state.screen === "jobs" && state.jobSelectionMode) {
+    if (state.jobSelectionMode && (state.screen === "jobs" || actionEl.closest(".mini-funnel"))) {
       const id = actionEl.dataset.jobId;
       if (state.selectedJobIds.has(id)) state.selectedJobIds.delete(id);
       else state.selectedJobIds.add(id);
@@ -5707,7 +5721,7 @@ document.addEventListener("input", (event) => {
 });
 
 document.addEventListener("dragstart", (event) => {
-  if (state.screen === "jobs" && state.jobSelectionMode) {
+  if (["jobs", "dashboard"].includes(state.screen) && state.jobSelectionMode) {
     event.preventDefault();
     return;
   }
